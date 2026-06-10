@@ -1,0 +1,8 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/helpers.php';
+function api_json($data,int $code=200): never { http_response_code($code); header('Content-Type: application/json; charset=utf-8'); echo json_encode($data, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES); exit; }
+function api_input(): array { $raw=file_get_contents('php://input'); $j=json_decode($raw?:'{}',true); return is_array($j)?$j:[]; }
+function bearer_token(): string { $h=$_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ''; if(preg_match('/Bearer\s+(.+)/i',$h,$m)) return trim($m[1]); return $_GET['token'] ?? ''; }
+function api_auth(string $perm): array { $token=bearer_token(); if($token==='') api_json(['ok'=>false,'error'=>'Token kosong'],401); $hash=hash('sha256',$token); $st=db()->prepare('SELECT * FROM api_tokens WHERE token_hash=? AND is_active=1 LIMIT 1'); $st->execute([$hash]); $row=$st->fetch(); if(!$row) api_json(['ok'=>false,'error'=>'Token tidak valid'],401); $perms=json_decode((string)($row['permissions_json']??'[]'),true) ?: []; if(!in_array($perm,$perms,true) && !in_array('*',$perms,true)) api_json(['ok'=>false,'error'=>'Permission API ditolak'],403); execq('UPDATE api_tokens SET last_used_at=NOW() WHERE id=?',[(int)$row['id']]); return $row; }
+function api_log(?int $store_id,string $endpoint,string $status,string $msg='',array $payload=[]): void { $st=db()->prepare('INSERT INTO api_logs(store_id,endpoint,direction,status,message,payload_json,created_at) VALUES(?,?,?,?,?,?,NOW())'); $st->execute([$store_id,$endpoint,'out',$status,$msg,json_encode($payload,JSON_UNESCAPED_UNICODE)]); }

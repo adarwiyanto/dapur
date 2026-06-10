@@ -1,0 +1,1 @@
+<?php require_once __DIR__.'/../../core/api.php'; api_auth('stock.view'); $out=[]; foreach(all('SELECT id,name,sku,unit FROM finished_products WHERE is_active=1 ORDER BY name') as $r){$r['stock_qty']=stock_qty('finished',(int)$r['id']);$out[]=$r;} api_json(['ok'=>true,'stocks'=>$out]);
