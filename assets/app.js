@@ -70,3 +70,57 @@ document.addEventListener('submit', async e => {
     }
   }
 });
+
+// Patch 20260613 - finished product edit modal only
+(() => {
+  const modal = document.querySelector('[data-finished-modal]');
+  if (!modal) return;
+
+  const fields = {
+    id: modal.querySelector('[data-finished-field="id"]'),
+    code: modal.querySelector('[data-finished-field="code"]'),
+    sku: modal.querySelector('[data-finished-field="sku"]'),
+    name: modal.querySelector('[data-finished-field="name"]'),
+    category: modal.querySelector('[data-finished-field="category"]'),
+    unit: modal.querySelector('[data-finished-field="unit"]'),
+    transfer_price: modal.querySelector('[data-finished-field="transfer_price"]'),
+    is_active: modal.querySelector('[data-finished-field="is_active"]')
+  };
+
+  const openModal = (button) => {
+    fields.id.value = button.dataset.id || '';
+    fields.code.value = button.dataset.code || '';
+    fields.sku.value = button.dataset.sku || '';
+    fields.name.value = button.dataset.name || '';
+    fields.category.value = button.dataset.category || '';
+    fields.unit.value = button.dataset.unit || 'pack';
+    fields.transfer_price.value = button.dataset.transferPrice || '0';
+    fields.is_active.checked = button.dataset.active === '1';
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+    window.setTimeout(() => (fields.code || fields.sku || fields.transfer_price).focus(), 0);
+  };
+
+  const closeModal = () => {
+    modal.hidden = true;
+    document.body.classList.remove('modal-open');
+  };
+
+  document.addEventListener('click', (event) => {
+    const editButton = event.target.closest('[data-finished-edit]');
+    if (editButton) {
+      event.preventDefault();
+      openModal(editButton);
+      return;
+    }
+
+    if (event.target.closest('[data-finished-modal-close]') || event.target === modal) {
+      event.preventDefault();
+      closeModal();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) closeModal();
+  });
+})();
