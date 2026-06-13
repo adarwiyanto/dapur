@@ -818,3 +818,38 @@ input:focus, select:focus, textarea:focus{
 :root{--adn-primary:#4b2418;--adn-accent:#d6a15d;--adn-bg:#f7f1ea;--adn-card:#fffaf4}
 body{background:linear-gradient(135deg,#fffaf4,#f7efe5);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;margin:0;color:#2d211b}
 .app-shell{display:flex;min-height:100vh}.sidebar{width:260px;background:#2b1710;color:#fff;padding:18px;position:sticky;top:0;height:100vh;box-sizing:border-box}.brand{font-weight:800;font-size:22px;margin-bottom:4px}.brand-sub{font-size:12px;opacity:.8;margin-bottom:18px}.nav a{display:block;color:#fff;text-decoration:none;padding:10px 12px;border-radius:12px;margin:3px 0}.nav a.active,.nav a:hover{background:rgba(214,161,93,.22)}.main{flex:1;padding:22px}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.card{background:rgba(255,255,255,.92);border:1px solid #ead9c8;border-radius:18px;padding:18px;box-shadow:0 8px 28px rgba(50,25,10,.08);margin-bottom:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.stat{font-size:28px;font-weight:800}.muted{color:#7c6c60}.btn{display:inline-block;padding:9px 13px;border-radius:11px;border:0;background:#4b2418;color:#fff;text-decoration:none;cursor:pointer}.btn.secondary{background:#d6a15d;color:#2b1710}.btn.danger{background:#a33}.btn.light{background:#f1e3d4;color:#4b2418;border:1px solid #e2cbb5}input,select,textarea{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #dcc7b2;border-radius:10px;background:#fff}label{font-weight:700;font-size:13px}table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden}th,td{padding:9px 10px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}th{background:#f6eadf}.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.notice{padding:12px;border-radius:12px;margin-bottom:12px}.ok{background:#e9f7ee}.err{background:#fdecea}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#f1e3d4}.login-box{max-width:420px;margin:9vh auto}.actions{display:flex;gap:8px;flex-wrap:wrap}.code{font-family:ui-monospace,monospace;background:#f7efe5;padding:2px 5px;border-radius:6px}.small{font-size:12px}
+
+/* Product import progress - scoped, tidak mempengaruhi modul lain */
+.import-progress[hidden]{display:none}
+.import-progress{
+  margin:12px 0 16px;
+  padding:12px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:#fff;
+}
+.import-progress-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-bottom:8px;
+  font-size:13px;
+}
+.import-progress-track{
+  width:100%;
+  height:10px;
+  border-radius:999px;
+  background:#eef2f7;
+  overflow:hidden;
+}
+.import-progress-bar{
+  width:0;
+  height:100%;
+  border-radius:999px;
+  background:var(--primary);
+  transition:width .25s ease;
+}
+.import-progress-bar.is-error{
+  background:#dc2626;
+}
