@@ -853,3 +853,31 @@ body{background:linear-gradient(135deg,#fffaf4,#f7efe5);font-family:Inter,system
 .import-progress-bar.is-error{
   background:#dc2626;
 }
+
+/* Patch 20260613 - UI global compact desktop friendly (scoped to Dapur Adena) */
+:root{
+  --adn-primary:#4b2418;
+  --adn-primary-dark:#2b1710;
+  --adn-accent:#d6a15d;
+  --adn-border:#ead9c8;
+}
+.main{padding:14px 16px}
+.sidebar{width:218px;padding:12px 12px}
+.brand{font-size:18px;margin-bottom:2px}
+.brand-sub{font-size:11px;margin-bottom:12px}
+.nav a{padding:7px 9px;border-radius:9px;margin:2px 0;font-size:13px;line-height:1.25}
+.topbar{background:var(--adn-primary);color:#fff;border:1px solid rgba(214,161,93,.35);border-radius:12px;padding:9px 12px;margin-bottom:12px;box-shadow:0 5px 16px rgba(43,23,16,.08)}
+.topbar .muted,.topbar .small{color:rgba(255,255,255,.82)}
+.card{border-radius:13px;padding:12px;margin-bottom:12px;box-shadow:0 5px 18px rgba(50,25,10,.06)}
+h2{font-size:18px;margin:0 0 10px} h3{font-size:15px;margin:14px 0 8px}
+.grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}.stat{font-size:22px}
+.btn,button,.portal-switch-row button{padding:6px 9px;border-radius:8px;font-size:12px;line-height:1.2;min-height:29px}
+.btn.secondary{background:var(--adn-accent);color:var(--adn-primary-dark)}
+input,select,textarea{padding:6px 8px;border-radius:8px;font-size:12px;min-height:30px;line-height:1.2}
+textarea{min-height:54px} label{font-size:12px} p{margin:0 0 8px}
+.form-grid{grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px 10px;align-items:end}.compact-form{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.actions{gap:5px;align-items:center}.actions form{display:inline-flex;margin:0}.actions input,.actions select{max-width:220px}
+table{border-radius:11px;font-size:12px}th,td{padding:6px 8px;line-height:1.25}th{background:#ead9c8;color:#2b1710;font-weight:800}.badge{padding:2px 6px}
+.notice{padding:9px 10px;border-radius:10px;font-size:13px}.ok{background:#ecfdf5;color:#065f46;border:1px solid #bbf7d0}.err{background:#fff1f2;color:#9f1239;border:1px solid #fecdd3}
+.import-progress{padding:9px;border-radius:10px;margin:8px 0 12px}.import-progress-track{height:8px}.import-progress-top{font-size:12px;margin-bottom:6px}
+@media (max-width:980px){.sidebar{width:100%;height:auto}.main{padding:12px}.topbar{padding:8px 10px}}
