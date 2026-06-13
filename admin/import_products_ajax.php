@@ -132,14 +132,15 @@ try {
         $sku = import_clean_string($it['sku'] ?? $it['code'] ?? '');
         $category = import_clean_string($it['category'] ?? $it['category_name'] ?? '');
         $unit = import_clean_string($it['base_unit'] ?? $it['unit'] ?? 'pack') ?: 'pack';
-        $salePrice = (float)($it['price'] ?? $it['sale_price'] ?? 0);
-        $transferPrice = (float)($it['kitchen_price'] ?? $it['transfer_price'] ?? $it['price'] ?? 0);
+        // Harga jual toko sengaja tidak diimpor. Harga Jual Dapur / Harga Transfer ke Toko diatur manual di Dapur.
+        $salePrice = 0.0;
+        $transferPrice = 0.0;
         $imagePath = import_clean_string($it['image_path'] ?? $it['image'] ?? $it['photo'] ?? '');
         $payloadJson = json_encode($it, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         $existing = one('SELECT id FROM finished_products WHERE source_store_id=? AND source_product_id=? LIMIT 1', [(int)$store['id'], $pid]);
         if ($existing) {
-            execq('UPDATE finished_products SET code=?, sku=?, name=?, category=?, unit=?, sale_price=?, transfer_price=?, image_path=?, source_payload_json=?, is_active=1, updated_at=NOW() WHERE id=?', [$code, $sku, $name, $category, $unit, $salePrice, $transferPrice, $imagePath, $payloadJson, (int)$existing['id']]);
+            execq('UPDATE finished_products SET code=?, sku=?, name=?, category=?, unit=?, image_path=?, source_payload_json=?, is_active=1, updated_at=NOW() WHERE id=?', [$code, $sku, $name, $category, $unit, $imagePath, $payloadJson, (int)$existing['id']]);
             $finishedId = (int)$existing['id'];
             $updated++;
         } else {
@@ -148,7 +149,7 @@ try {
             $inserted++;
         }
 
-        execq('INSERT INTO finished_product_store_mappings(finished_product_id,store_id,store_product_id,store_sku,store_product_name,store_price,is_active) VALUES(?,?,?,?,?,?,1) ON DUPLICATE KEY UPDATE store_product_id=VALUES(store_product_id),store_sku=VALUES(store_sku),store_product_name=VALUES(store_product_name),store_price=VALUES(store_price),is_active=1', [$finishedId, (int)$store['id'], $pid, $sku, $name, $salePrice]);
+        execq('INSERT INTO finished_product_store_mappings(finished_product_id,store_id,store_product_id,store_sku,store_product_name,store_price,is_active) VALUES(?,?,?,?,?,?,1) ON DUPLICATE KEY UPDATE store_product_id=VALUES(store_product_id),store_sku=VALUES(store_sku),store_product_name=VALUES(store_product_name),is_active=1', [$finishedId, (int)$store['id'], $pid, $sku, $name, 0]);
     }
 
     $message = 'Import via API. Total response: ' . $total . ', baru: ' . $inserted . ', update: ' . $updated . ', dilewati: ' . $skipped;
