@@ -80,13 +80,22 @@ if (!$store) {
     import_json(['ok' => false, 'message' => 'Toko/API tidak ditemukan atau tidak aktif.'], 404);
 }
 
-[$httpCode, $body, $curlError] = store_api_call_for_import($store, 'api/v1/kitchen/products.php', [], 'GET');
+$endpoint = 'api/dapur/products.php';
+[$httpCode, $body, $curlError] = store_api_call_for_import($store, $endpoint, [], 'GET');
 if ($curlError !== '') {
     import_json(['ok' => false, 'message' => 'Gagal menghubungi API toko: ' . $curlError, 'http_code' => $httpCode], 502);
 }
 if ($httpCode < 200 || $httpCode >= 300) {
     $preview = trim(substr((string)$body, 0, 240));
-    import_json(['ok' => false, 'message' => 'API toko memberi HTTP ' . $httpCode . ($preview !== '' ? ' - ' . $preview : ''), 'http_code' => $httpCode], 502);
+    $message = 'API toko memberi HTTP ' . $httpCode . ($preview !== '' ? ' - ' . $preview : '');
+    if ($httpCode === 401) {
+        $message = 'Token API toko tidak valid. Pastikan token dari menu Admin → API Dapur di toko sudah ditempel di Dapur → Toko & API. Detail: HTTP 401' . ($preview !== '' ? ' - ' . $preview : '');
+    } elseif ($httpCode === 403) {
+        $message = 'Token API toko aktif tetapi permission ditolak. Pastikan permission API Dapur di toko mengizinkan export produk. Detail: HTTP 403' . ($preview !== '' ? ' - ' . $preview : '');
+    } elseif ($httpCode === 404) {
+        $message = 'Endpoint API Dapur di toko tidak ditemukan: ' . $endpoint . '. Pastikan patch API Dapur di toko sudah terpasang. Detail: HTTP 404' . ($preview !== '' ? ' - ' . $preview : '');
+    }
+    import_json(['ok' => false, 'message' => $message, 'endpoint' => $endpoint, 'http_code' => $httpCode], 502);
 }
 
 $json = json_decode((string)$body, true);
@@ -97,7 +106,7 @@ if (!is_array($json)) {
 $items = import_pick_items($json);
 if (!$items) {
     $preview = trim(substr((string)$body, 0, 240));
-    import_json(['ok' => false, 'message' => 'Response API valid, tetapi daftar produk kosong/tidak dikenali.' . ($preview !== '' ? ' Preview: ' . $preview : ''), 'http_code' => $httpCode], 422);
+    import_json(['ok' => false, 'message' => 'Response API valid dari endpoint ' . $endpoint . ', tetapi daftar produk kosong/tidak dikenali.' . ($preview !== '' ? ' Preview: ' . $preview : ''), 'http_code' => $httpCode], 422);
 }
 
 $inserted = 0;
@@ -145,7 +154,7 @@ try {
     $message = 'Import via API. Total response: ' . $total . ', baru: ' . $inserted . ', update: ' . $updated . ', dilewati: ' . $skipped;
     execq('INSERT INTO product_import_logs(store_id,total_imported,message,created_by) VALUES(?,?,?,?)', [(int)$store['id'], $inserted + $updated, $message, (int)($u['id'] ?? 0)]);
     if (table_exists('api_logs')) {
-        execq('INSERT INTO api_logs(store_id,endpoint,direction,status,message,payload_json) VALUES(?,?,?,?,?,?)', [(int)$store['id'], 'api/v1/kitchen/products.php', 'in', 'import_ok', $message, json_encode(['total' => $total, 'inserted' => $inserted, 'updated' => $updated, 'skipped' => $skipped], JSON_UNESCAPED_UNICODE)]);
+        execq('INSERT INTO api_logs(store_id,endpoint,direction,status,message,payload_json) VALUES(?,?,?,?,?,?)', [(int)$store['id'], $endpoint, 'in', 'import_ok', $message, json_encode(['total' => $total, 'inserted' => $inserted, 'updated' => $updated, 'skipped' => $skipped], JSON_UNESCAPED_UNICODE)]);
     }
     db()->commit();
 } catch (Throwable $e) {

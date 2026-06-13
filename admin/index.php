@@ -9,7 +9,24 @@ function h2($t){echo '<h2>'.e($t).'</h2>';}
 function next_no($prefix,$table,$field){return $prefix.'-'.date('Ymd').'-'.str_pad((string)(((int)(db()->query("SELECT COUNT(*) FROM $table")->fetchColumn()))+1),4,'0',STR_PAD_LEFT);} 
 function postval($k,$d=''){return trim((string)($_POST[$k]??$d));}
 function call_store_api(array $store,string $path,array $payload=[],string $method='POST'){
- $url=rtrim($store['api_base_url'],'/').'/'.ltrim($path,'/'); $ch=curl_init($url); $headers=['Content-Type: application/json']; if(!empty($store['api_token'])) $headers[]='Authorization: Bearer '.$store['api_token']; curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>20,CURLOPT_HTTPHEADER=>$headers]); if($method==='POST'){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($payload,JSON_UNESCAPED_UNICODE));} $body=curl_exec($ch); $code=curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch); return [$code,$body,$err];
+ $url=rtrim($store['api_base_url'],'/').'/'.ltrim($path,'/'); $ch=curl_init($url); $headers=['Accept: application/json','Content-Type: application/json']; if(!empty($store['api_token'])) $headers[]='Authorization: Bearer '.$store['api_token']; curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_HTTPHEADER=>$headers,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_MAXREDIRS=>3]); if($method==='POST'){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($payload,JSON_UNESCAPED_UNICODE));} $body=curl_exec($ch); $code=curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch); return [$code,$body,$err];
+}
+function store_api_message(int $code, string $body, string $err, string $endpoint): string{
+ if($err!=='') return 'Gagal menghubungi API toko: '.$err;
+ $json=json_decode(trim($body),true); $detail='';
+ if(is_array($json)) $detail=(string)($json['message']??$json['error']??$json['status']??($json['ok']??''));
+ if($detail==='') $detail=trim(strip_tags(substr($body,0,180)));
+ if($code===401) return 'Token API toko tidak valid. Pastikan token dari menu Admin → API Dapur di toko sudah ditempel di Dapur → Toko & API. Endpoint: '.$endpoint.($detail!==''?' - '.$detail:'');
+ if($code===403) return 'Token API toko aktif tetapi permission ditolak. Endpoint: '.$endpoint.($detail!==''?' - '.$detail:'');
+ if($code===404) return 'Endpoint API Dapur di toko tidak ditemukan: '.$endpoint.'. Pastikan patch API Dapur di toko sudah terpasang.';
+ return 'HTTP '.$code.($detail!==''?' - '.$detail:'');
+}
+function pick_store_products(array $json): array{
+ $items=[];
+ if(isset($json['products'])&&is_array($json['products'])) $items=$json['products'];
+ elseif(isset($json['data'])&&is_array($json['data'])) $items=(isset($json['data']['products'])&&is_array($json['data']['products']))?$json['data']['products']:$json['data'];
+ elseif((function_exists('array_is_list')?array_is_list($json):array_keys($json)===range(0,count($json)-1))) $items=$json;
+ return array_values(array_filter($items,'is_array'));
 }
 $f=flash();
 ?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css"><script src="../assets/app.js" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php foreach($menus as $k=>$m){ if(can($m[2])) echo '<a class="'.($page===$k?'active':'').'" href="?page='.e($k).'"><span>'.e($m[1]).'</span> '.e($m[0]).'</a>'; } ?><a href="../logout.php">⎋ Logout</a></nav></aside><main class="main"><div class="topbar"><div><strong><?=e($menus[$page][0])?></strong><div class="muted small">Login: <?=e($u['name']??'')?></div></div></div><?php if($f): ?><div class="notice <?=e($f[1])?>"><?=e($f[0])?></div><?php endif; ?><div class="card">
@@ -55,16 +72,15 @@ elseif($page==='stores'){
   if($act==='test'){
    $s=one('SELECT * FROM stores WHERE id=?',[(int)$_POST['id']]);
    if(!$s){ flash('Toko tidak ditemukan.','err'); redirect('?page=stores'); }
-   [$c,$b,$e]=call_store_api($s,'api/v1/kitchen/ping.php',[],'POST');
-   $body=trim((string)$b);
-   $json=json_decode($body,true);
-   $detail='';
-   if(is_array($json)) $detail=(string)($json['message']??$json['status']??$json['ok']??'');
-   if($detail==='') $detail=trim(strip_tags(substr($body,0,160)));
-   if($c>=200&&$c<300){
-    flash('Test API sukses. Koneksi toko aktif. HTTP '.$c.($detail!==''?' - '.$detail:''),'ok');
+   $endpoint='api/dapur/products.php';
+   [$c,$b,$e]=call_store_api($s,$endpoint,[],'GET');
+   $json=json_decode(trim((string)$b),true);
+   if($c>=200&&$c<300&&is_array($json)){
+    $items=pick_store_products($json);
+    $total=(int)($json['total']??count($items));
+    flash('Test API sukses. Token valid. Endpoint API Dapur aktif. Produk terbaca: '.$total.' item.','ok');
    }else{
-    flash('Test API gagal. '.($e!==''?$e:'HTTP '.$c.($detail!==''?' - '.$detail:'')),'err');
+    flash('Test API gagal. '.store_api_message((int)$c,(string)$b,(string)$e,$endpoint),'err');
    }
    redirect('?page=stores');
   }
@@ -82,7 +98,7 @@ elseif($page==='raw'){
 elseif($page==='finished'){
  if($_SERVER['REQUEST_METHOD']==='POST'){
   if(($_POST['act']??'')==='manual'){execq('INSERT INTO finished_products(code,sku,name,category,unit,sale_price,transfer_price,is_active) VALUES(?,?,?,?,?,?,?,1)',[postval('code'),postval('sku'),postval('name'),postval('category'),postval('unit','pack'),(float)postval('sale_price','0'),(float)postval('transfer_price','0')]); flash('Produk jadi disimpan.'); redirect('?page=finished');}
-  if(($_POST['act']??'')==='import'){ $store=one('SELECT * FROM stores WHERE id=?',[(int)$_POST['store_id']]); [$c,$body,$err]=call_store_api($store,'api/v1/kitchen/products.php',[],'GET'); $json=json_decode((string)$body,true); $items=$json['products']??$json['data']??[]; $n=0; foreach($items as $it){ if(!is_array($it))continue; $pid=(string)($it['id']??$it['product_id']??''); $name=(string)($it['name']??$it['product_name']??''); if($pid===''||$name==='')continue; execq('INSERT INTO finished_products(code,sku,name,category,unit,sale_price,transfer_price,image_path,source_store_id,source_product_id,source_payload_json,is_active,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE name=VALUES(name),category=VALUES(category),sale_price=VALUES(sale_price),image_path=VALUES(image_path),source_payload_json=VALUES(source_payload_json),updated_at=NOW()',[(string)($it['code']??$it['sku']??''),(string)($it['sku']??''),$name,(string)($it['category']??''),(string)($it['base_unit']??$it['unit']??'pack'),(float)($it['price']??0),(float)($it['kitchen_price']??$it['transfer_price']??0),(string)($it['image_path']??''),(int)$store['id'],$pid,json_encode($it,JSON_UNESCAPED_UNICODE),1]); $fp=(int)db()->lastInsertId(); if($fp===0){$fp=(int)one('SELECT id FROM finished_products WHERE source_store_id=? AND source_product_id=?',[(int)$store['id'],$pid])['id'];} execq('INSERT INTO finished_product_store_mappings(finished_product_id,store_id,store_product_id,store_sku,store_product_name,store_price,is_active) VALUES(?,?,?,?,?,?,1) ON DUPLICATE KEY UPDATE store_product_id=VALUES(store_product_id),store_sku=VALUES(store_sku),store_product_name=VALUES(store_product_name),store_price=VALUES(store_price),is_active=1',[$fp,(int)$store['id'],$pid,(string)($it['sku']??''),$name,(float)($it['price']??0)]); $n++; } execq('INSERT INTO product_import_logs(store_id,total_imported,message,created_by) VALUES(?,?,?,?)',[(int)$store['id'],$n,'Import via API', (int)($u['id']??0)]); flash('Import produk selesai: '.$n.' item.'); redirect('?page=finished'); }
+  if(($_POST['act']??'')==='import'){ $store=one('SELECT * FROM stores WHERE id=?',[(int)$_POST['store_id']]); [$c,$body,$err]=call_store_api($store,'api/dapur/products.php',[],'GET'); if($err!==''||$c<200||$c>=300){flash('Import produk gagal. '.store_api_message((int)$c,(string)$body,(string)$err,'api/dapur/products.php'),'err'); redirect('?page=finished');} $json=json_decode((string)$body,true); $items=is_array($json)?pick_store_products($json):[]; $n=0; foreach($items as $it){ if(!is_array($it))continue; $pid=(string)($it['id']??$it['product_id']??''); $name=(string)($it['name']??$it['product_name']??''); if($pid===''||$name==='')continue; execq('INSERT INTO finished_products(code,sku,name,category,unit,sale_price,transfer_price,image_path,source_store_id,source_product_id,source_payload_json,is_active,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE name=VALUES(name),category=VALUES(category),sale_price=VALUES(sale_price),image_path=VALUES(image_path),source_payload_json=VALUES(source_payload_json),updated_at=NOW()',[(string)($it['code']??$it['sku']??''),(string)($it['sku']??''),$name,(string)($it['category']??''),(string)($it['base_unit']??$it['unit']??'pack'),(float)($it['price']??0),(float)($it['kitchen_price']??$it['transfer_price']??0),(string)($it['image_path']??''),(int)$store['id'],$pid,json_encode($it,JSON_UNESCAPED_UNICODE),1]); $fp=(int)db()->lastInsertId(); if($fp===0){$fp=(int)one('SELECT id FROM finished_products WHERE source_store_id=? AND source_product_id=?',[(int)$store['id'],$pid])['id'];} execq('INSERT INTO finished_product_store_mappings(finished_product_id,store_id,store_product_id,store_sku,store_product_name,store_price,is_active) VALUES(?,?,?,?,?,?,1) ON DUPLICATE KEY UPDATE store_product_id=VALUES(store_product_id),store_sku=VALUES(store_sku),store_product_name=VALUES(store_product_name),store_price=VALUES(store_price),is_active=1',[$fp,(int)$store['id'],$pid,(string)($it['sku']??''),$name,(float)($it['price']??0)]); $n++; } execq('INSERT INTO product_import_logs(store_id,total_imported,message,created_by) VALUES(?,?,?,?)',[(int)$store['id'],$n,'Import via API', (int)($u['id']??0)]); flash('Import produk selesai: '.$n.' item.'); redirect('?page=finished'); }
  }
  h2('Produk Jadi / Finished Product'); echo '<h3>Input Manual</h3><form method="post" class="form-grid">'.csrf_field().'<input type="hidden" name="act" value="manual"><p><label>Kode<input name="code"></label></p><p><label>SKU<input name="sku"></label></p><p><label>Nama<input name="name" required></label></p><p><label>Kategori<input name="category"></label></p><p><label>Satuan<input name="unit" value="pack"></label></p><p><label>Harga Jual<input name="sale_price" type="number"></label></p><p><label>Harga Transfer<input name="transfer_price" type="number"></label></p><p><button class="btn">Simpan</button></p></form><h3>Import Produk dari Toko</h3><form method="post" class="actions product-import-form" data-product-import="1" data-import-url="import_products_ajax.php">'.csrf_field().'<input type="hidden" name="act" value="import"><select name="store_id">'; foreach(all('SELECT * FROM stores WHERE is_active=1 ORDER BY store_name') as $s) echo '<option value="'.(int)$s['id'].'">'.e($s['store_name']).'</option>'; echo '</select><button class="btn secondary" type="submit">Import Semua Elemen Produk</button></form><div class="import-progress" id="product-import-progress" hidden><div class="import-progress-top"><strong>Status import</strong><span data-import-percent>0%</span></div><div class="import-progress-track"><div class="import-progress-bar" data-import-bar></div></div><div class="muted small" data-import-status>Menunggu proses import...</div></div>';
  echo '<table><tr><th>Produk</th><th>SKU</th><th>Harga Transfer</th><th>Stok Dapur</th><th>Sumber</th></tr>'; foreach(all('SELECT fp.*, s.store_name FROM finished_products fp LEFT JOIN stores s ON s.id=fp.source_store_id ORDER BY fp.name') as $r) echo '<tr><td>'.e($r['name']).'</td><td>'.e($r['sku']).'</td><td>'.rupiah($r['transfer_price']).'</td><td>'.dec(stock_qty('finished',(int)$r['id'])).'</td><td>'.e($r['store_name']??'Manual').'</td></tr>'; echo '</table>';
