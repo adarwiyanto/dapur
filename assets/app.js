@@ -27,6 +27,7 @@ document.addEventListener('submit', async e => {
     if (status && text) status.textContent = text;
   };
 
+  if (bar) bar.classList.remove('is-error');
   setProgress(8, 'Menghubungi API toko...');
   if (button) {
     button.disabled = true;
@@ -66,7 +67,7 @@ document.addEventListener('submit', async e => {
     if (timer) window.clearInterval(timer);
     if (button) {
       button.disabled = false;
-      button.textContent = button.dataset.originalText || 'Import Semua Elemen Produk';
+      button.textContent = button.dataset.originalText || 'Impor Produk';
     }
   }
 });
@@ -115,6 +116,94 @@ document.addEventListener('submit', async e => {
     }
 
     if (event.target.closest('[data-finished-modal-close]') || event.target === modal) {
+      event.preventDefault();
+      closeModal();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) closeModal();
+  });
+})();
+
+
+// Patch 20260613 - finished product search/filter + import modal only
+(() => {
+  const table = document.querySelector('[data-finished-table]');
+  const search = document.querySelector('[data-finished-search]');
+  const source = document.querySelector('[data-finished-source]');
+  const stock = document.querySelector('[data-finished-stock]');
+  const active = document.querySelector('[data-finished-active]');
+  const reset = document.querySelector('[data-finished-filter-reset]');
+  const rows = table ? Array.from(table.querySelectorAll('[data-finished-row]')) : [];
+  const empty = table ? table.querySelector('[data-finished-empty]') : null;
+
+  const normalize = (value) => (value || '').toString().toLowerCase().trim();
+
+  const applyFilter = () => {
+    if (!table) return;
+    const q = normalize(search ? search.value : '');
+    const sourceValue = source ? source.value : '';
+    const stockValue = stock ? stock.value : '';
+    const activeValue = active ? active.value : '';
+    let visible = 0;
+
+    rows.forEach((row) => {
+      const matchSearch = !q || normalize(row.dataset.search).includes(q);
+      const matchSource = !sourceValue || row.dataset.source === sourceValue;
+      const matchStock = !stockValue || row.dataset.stock === stockValue;
+      const matchActive = activeValue === '' || row.dataset.active === activeValue;
+      const show = matchSearch && matchSource && matchStock && matchActive;
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+
+    if (empty) empty.hidden = visible !== 0;
+  };
+
+  [search, source, stock, active].forEach((el) => {
+    if (!el) return;
+    el.addEventListener('input', applyFilter);
+    el.addEventListener('change', applyFilter);
+  });
+
+  if (reset) {
+    reset.addEventListener('click', () => {
+      if (search) search.value = '';
+      if (source) source.value = '';
+      if (stock) stock.value = '';
+      if (active) active.value = '';
+      applyFilter();
+      if (search) search.focus();
+    });
+  }
+
+  applyFilter();
+})();
+
+(() => {
+  const modal = document.querySelector('[data-finished-import-modal]');
+  if (!modal) return;
+
+  const firstField = modal.querySelector('select, input, button');
+  const openModal = () => {
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+    window.setTimeout(() => firstField && firstField.focus(), 0);
+  };
+  const closeModal = () => {
+    modal.hidden = true;
+    document.body.classList.remove('modal-open');
+  };
+
+  document.addEventListener('click', (event) => {
+    const openButton = event.target.closest('[data-finished-import-open]');
+    if (openButton) {
+      event.preventDefault();
+      if (!openButton.disabled) openModal();
+      return;
+    }
+    if (event.target.closest('[data-finished-import-close]') || event.target === modal) {
       event.preventDefault();
       closeModal();
     }

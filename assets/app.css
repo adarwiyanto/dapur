@@ -966,3 +966,93 @@ body.modal-open{overflow:hidden}
   .finished-edit-grid{grid-template-columns:1fr}
   .modal-actions{justify-content:flex-start}
 }
+
+/* Patch 20260613 - Produk Jadi search/filter/import popup + compact tables */
+.main table{
+  display:block;
+  width:max-content;
+  max-width:100%;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  white-space:nowrap;
+}
+.main table th,
+.main table td{
+  white-space:nowrap;
+}
+.finished-toolbar{
+  padding:10px 12px;
+}
+.finished-filter-grid{
+  display:grid;
+  grid-template-columns:minmax(240px, 1.4fr) minmax(140px, .75fr) minmax(130px, .7fr) minmax(130px, .7fr) auto;
+  gap:8px 10px;
+  align-items:end;
+}
+.finished-filter-grid p{
+  margin:0;
+}
+.finished-toolbar-actions{
+  display:flex;
+  gap:6px;
+  align-items:end;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+}
+.finished-table-wrap{
+  width:100%;
+  max-width:100%;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  margin-bottom:12px;
+}
+.finished-table-wrap .finished-products-table{
+  display:table;
+  width:max-content;
+  max-width:none;
+  overflow:visible;
+  table-layout:auto;
+}
+.finished-products-table .col-product,
+.finished-products-table .product-name-cell{
+  width:1%;
+  max-width:none;
+  white-space:nowrap;
+}
+.finished-products-table .product-name-cell{
+  padding-right:2ch;
+}
+.finished-products-table .col-sku,
+.finished-products-table .col-price,
+.finished-products-table .col-stock,
+.finished-products-table .col-source,
+.finished-products-table .col-action{
+  width:1%;
+  white-space:nowrap;
+}
+.finished-import-form{
+  padding:12px 14px 14px;
+}
+.finished-import-form p{
+  margin:0 0 10px;
+}
+.finished-import-modal{
+  width:min(560px,100%);
+}
+@media (max-width:920px){
+  .finished-filter-grid{
+    grid-template-columns:1fr 1fr;
+  }
+  .finished-search-field,
+  .finished-toolbar-actions{
+    grid-column:1/-1;
+  }
+  .finished-toolbar-actions{
+    justify-content:flex-start;
+  }
+}
+@media (max-width:560px){
+  .finished-filter-grid{
+    grid-template-columns:1fr;
+  }
+}
