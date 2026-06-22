@@ -2,7 +2,7 @@
 require_once __DIR__.'/../core/auth.php'; require_login(); verify_csrf();
 $u=current_user(); $page=$_GET['page']??'dashboard';
 $menus=[
- 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian','🛒','purchases'], 'bom'=>['BOM','🧾','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
+ 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian','🛒','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
 ];
 if(!isset($menus[$page])) $page='dashboard'; require_perm($menus[$page][2]); if(($menus[$page][3]??'')==='owner' && !is_owner()){ http_response_code(403); die('Akses ditolak.'); }
 function h2($t){echo '<h2>'.e($t).'</h2>';}
@@ -24,6 +24,25 @@ function finished_product_ref_count(int $id): int {
   else $refs+=(int)one('SELECT COUNT(*) c FROM '.$c[0].' WHERE '.$c[1].'=?',[$id])['c'];
  }
  return $refs;
+}
+
+function bom_ref_count(int $id): int {
+ $refs=0;
+ if(table_exists('production_headers')) $refs+=(int)one('SELECT COUNT(*) c FROM production_headers WHERE bom_id=?',[$id])['c'];
+ return $refs;
+}
+function save_bom_items(int $bomId, array $rawIds, array $qtys): int {
+ execq('DELETE FROM bom_items WHERE bom_id=?',[$bomId]);
+ $saved=0;
+ foreach($rawIds as $i=>$rid){
+  $rid=(int)$rid; $qty=(float)($qtys[$i]??0);
+  if($rid<=0||$qty<=0) continue;
+  $rm=one('SELECT unit FROM raw_materials WHERE id=? AND is_active=1',[$rid]);
+  if(!$rm) continue;
+  execq('INSERT INTO bom_items(bom_id,raw_material_id,qty,unit) VALUES(?,?,?,?)',[$bomId,$rid,$qty,$rm['unit']??'']);
+  $saved++;
+ }
+ return $saved;
 }
 function call_store_api(array $store,string $path,array $payload=[],string $method='POST'){
  $url=rtrim($store['api_base_url'],'/').'/'.ltrim($path,'/'); $ch=curl_init($url); $headers=['Accept: application/json','Content-Type: application/json']; if(!empty($store['api_token'])) $headers[]='Authorization: Bearer '.$store['api_token']; curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_HTTPHEADER=>$headers,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_MAXREDIRS=>3]); if($method==='POST'){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($payload,JSON_UNESCAPED_UNICODE));} $body=curl_exec($ch); $code=curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch); return [$code,$body,$err];
@@ -144,8 +163,67 @@ elseif($page==='purchases'){
  echo '<h3>Riwayat</h3><table><tr><th>No</th><th>Tanggal</th><th>Supplier</th><th>Total</th></tr>'; foreach(all('SELECT * FROM purchase_headers ORDER BY id DESC LIMIT 20') as $r) echo '<tr><td>'.e($r['purchase_no']).'</td><td>'.e($r['purchase_date']).'</td><td>'.e($r['supplier_name']).'</td><td>'.rupiah($r['total_amount']).'</td></tr>'; echo '</table>';
 }
 elseif($page==='bom'){
- if($_SERVER['REQUEST_METHOD']==='POST'){ execq('INSERT INTO bom_headers(bom_code,finished_product_id,yield_qty,notes,is_active) VALUES(?,?,?,?,1)',[postval('bom_code')?:next_no('BOM','bom_headers','bom_code'),(int)$_POST['finished_product_id'],(float)postval('yield_qty','1'),postval('notes')]); $bid=(int)db()->lastInsertId(); foreach($_POST['raw_material_id']??[] as $i=>$rid){$rid=(int)$rid;$qty=(float)($_POST['qty'][$i]??0); if($rid<=0||$qty<=0)continue; $rm=one('SELECT unit FROM raw_materials WHERE id=?',[$rid]); execq('INSERT INTO bom_items(bom_id,raw_material_id,qty,unit) VALUES(?,?,?,?)',[$bid,$rid,$qty,$rm['unit']??'']); } flash('BOM dibuat.'); redirect('?page=bom'); }
- h2('BOM Backward Produk Jadi'); $fps=all('SELECT * FROM finished_products WHERE is_active=1 ORDER BY name'); $rms=all('SELECT * FROM raw_materials WHERE is_active=1 ORDER BY name'); echo '<form method="post">'.csrf_field().'<div class="form-grid"><p><label>Kode BOM<input name="bom_code" placeholder="auto bila kosong"></label></p><p><label>Produk Jadi<select name="finished_product_id">'; foreach($fps as $fp) echo '<option value="'.(int)$fp['id'].'">'.e($fp['name']).'</option>'; echo '</select></label></p><p><label>Yield Qty<input name="yield_qty" type="number" step="0.0001" value="1"></label></p><p><label>Catatan<input name="notes"></label></p></div><table><tr><th>Bahan Baku</th><th>Qty kebutuhan</th></tr>'; for($i=0;$i<8;$i++){ echo '<tr><td><select name="raw_material_id[]"><option value="">-</option>'; foreach($rms as $rm) echo '<option value="'.(int)$rm['id'].'">'.e($rm['name']).'</option>'; echo '</select></td><td><input name="qty[]" type="number" step="0.0001"></td></tr>'; } echo '</table><p><button class="btn">Simpan BOM</button></p></form><h3>Daftar BOM</h3><table><tr><th>Kode</th><th>Produk</th><th>Yield</th></tr>'; foreach(all('SELECT b.*,fp.name product_name FROM bom_headers b JOIN finished_products fp ON fp.id=b.finished_product_id ORDER BY b.id DESC') as $r) echo '<tr><td>'.e($r['bom_code']).'</td><td>'.e($r['product_name']).'</td><td>'.dec($r['yield_qty']).'</td></tr>'; echo '</table>';
+ if($_SERVER['REQUEST_METHOD']==='POST'){
+  $act=$_POST['act']??'create_bom';
+  if($act==='create_bom' || $act==='update_bom'){
+   $id=(int)($_POST['id']??0);
+   $code=postval('bom_code');
+   $finishedId=(int)($_POST['finished_product_id']??0);
+   $yield=(float)postval('yield_qty','1');
+   if($yield<=0){ flash('Yield Qty harus lebih dari 0.','err'); redirect('?page=bom'.($id>0?'&edit='.$id:'')); }
+   $fp=one('SELECT * FROM finished_products WHERE id=? AND is_active=1',[$finishedId]);
+   if(!$fp){ flash('Produk jadi tidak valid atau sedang hide.','err'); redirect('?page=bom'.($id>0?'&edit='.$id:'')); }
+   try{
+    db()->beginTransaction();
+    if($act==='update_bom'){
+     $bom=one('SELECT * FROM bom_headers WHERE id=?',[$id]);
+     if(!$bom){ throw new Exception('BOM tidak ditemukan.'); }
+     execq('UPDATE bom_headers SET bom_code=?, finished_product_id=?, yield_qty=?, notes=?, is_active=1 WHERE id=?',[$code?:$bom['bom_code'],$finishedId,$yield,postval('notes'),$id]);
+     $bid=$id;
+    }else{
+     execq('INSERT INTO bom_headers(bom_code,finished_product_id,yield_qty,notes,is_active) VALUES(?,?,?,?,1)',[$code?:next_no('BOM','bom_headers','bom_code'),$finishedId,$yield,postval('notes')]);
+     $bid=(int)db()->lastInsertId();
+    }
+    $itemCount=save_bom_items($bid,$_POST['raw_material_id']??[],$_POST['qty']??[]);
+    if($itemCount<1){ throw new Exception('Minimal 1 bahan baku wajib diisi.'); }
+    db()->commit();
+    flash($act==='update_bom'?'BOM diupdate.':'BOM dibuat.');
+    redirect('?page=bom');
+   }catch(Throwable $e){ if(db()->inTransaction()) db()->rollBack(); flash('Gagal menyimpan BOM: '.$e->getMessage(),'err'); redirect('?page=bom'.($id>0?'&edit='.$id:'')); }
+  }
+  if($act==='delete_bom'){
+   $id=(int)($_POST['id']??0); $bom=one('SELECT * FROM bom_headers WHERE id=?',[$id]);
+   if(!$bom){ flash('BOM tidak ditemukan.','err'); redirect('?page=bom'); }
+   if(bom_ref_count($id)>0){ execq('UPDATE bom_headers SET is_active=0 WHERE id=?',[$id]); flash('BOM sudah pernah dipakai produksi, jadi disembunyikan dari daftar.'); }
+   else { execq('DELETE FROM bom_items WHERE bom_id=?',[$id]); execq('DELETE FROM bom_headers WHERE id=?',[$id]); flash('BOM dihapus permanen.'); }
+   redirect('?page=bom');
+  }
+ }
+ $editId=(int)($_GET['edit']??0); $edit=$editId>0?one('SELECT * FROM bom_headers WHERE id=?',[$editId]):null; $editItems=$edit?all('SELECT * FROM bom_items WHERE bom_id=? ORDER BY id',[(int)$edit['id']]):[];
+ h2($edit?'Edit BOM':'BOM Backward Produk Jadi');
+ $fps=all('SELECT * FROM finished_products WHERE is_active=1 ORDER BY name'); $rms=all('SELECT * FROM raw_materials WHERE is_active=1 ORDER BY name');
+ echo '<form method="post">'.csrf_field().'<input type="hidden" name="act" value="'.($edit?'update_bom':'create_bom').'"><input type="hidden" name="id" value="'.(int)($edit['id']??0).'"><div class="form-grid"><p><label>Kode BOM<input name="bom_code" value="'.e($edit['bom_code']??'').'" placeholder="auto bila kosong"></label></p><p><label>Produk Jadi<select name="finished_product_id">';
+ foreach($fps as $fp) echo '<option value="'.(int)$fp['id'].'" '.(((int)($edit['finished_product_id']??0)===(int)$fp['id'])?'selected':'').'>'.e($fp['name']).'</option>';
+ echo '</select></label></p><p><label>Yield Qty<input name="yield_qty" type="number" step="0.0001" value="'.e((string)($edit['yield_qty']??'1')).'"></label></p><p><label>Catatan<input name="notes" value="'.e($edit['notes']??'').'"></label></p></div><table><tr><th>Bahan Baku</th><th>Qty kebutuhan</th></tr>';
+ $rows=max(8,count($editItems));
+ for($i=0;$i<$rows;$i++){ $cur=$editItems[$i]??[]; echo '<tr><td><select name="raw_material_id[]"><option value="">-</option>'; foreach($rms as $rm) echo '<option value="'.(int)$rm['id'].'" '.(((int)($cur['raw_material_id']??0)===(int)$rm['id'])?'selected':'').'>'.e($rm['name']).'</option>'; echo '</select></td><td><input name="qty[]" type="number" step="0.0001" value="'.e((string)($cur['qty']??'')).'"></td></tr>'; }
+ echo '</table><p class="actions"><button class="btn">'.($edit?'Update BOM':'Simpan BOM').'</button>'.($edit?' <a class="btn light" href="?page=bom">Batal</a>':'').' <a class="btn light" href="?page=bom_hidden">Hide BOM</a></p></form><h3>Daftar BOM Aktif</h3><table><tr><th>Kode</th><th>Produk</th><th>Yield</th><th>Item</th><th>Aksi</th></tr>';
+ foreach(all('SELECT b.*,fp.name product_name,(SELECT COUNT(*) FROM bom_items bi WHERE bi.bom_id=b.id) item_count FROM bom_headers b JOIN finished_products fp ON fp.id=b.finished_product_id WHERE b.is_active=1 ORDER BY b.id DESC') as $r){ echo '<tr><td>'.e($r['bom_code']).'</td><td>'.e($r['product_name']).'</td><td>'.dec($r['yield_qty']).'</td><td>'.(int)$r['item_count'].'</td><td><div class="actions"><a class="btn light" href="?page=bom&edit='.(int)$r['id'].'">Edit</a><form method="post" onsubmit="return confirm(&quot;Hapus BOM ini? Bila sudah pernah produksi, BOM akan di-hide.&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete_bom"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn danger">Hapus</button></form></div></td></tr>'; }
+ echo '</table>';
+}
+elseif($page==='bom_hidden'){
+ if($_SERVER['REQUEST_METHOD']==='POST'){
+  if(($_POST['act']??'')==='restore_bom'){
+   $id=(int)($_POST['id']??0); $bom=$id>0?one('SELECT * FROM bom_headers WHERE id=?',[$id]):null;
+   if(!$bom){ flash('BOM tidak ditemukan.','err'); redirect('?page=bom_hidden'); }
+   execq('UPDATE bom_headers SET is_active=1 WHERE id=?',[$id]); flash('BOM dikembalikan ke daftar BOM aktif.'); redirect('?page=bom_hidden');
+  }
+ }
+ h2('Hide BOM');
+ echo '<p class="muted">BOM di halaman ini disembunyikan dari produksi, tetapi histori produksi lama tetap aman.</p>';
+ echo '<table><tr><th>Kode</th><th>Produk</th><th>Yield</th><th>Produksi Terkait</th><th>Aksi</th></tr>';
+ foreach(all('SELECT b.*,fp.name product_name,(SELECT COUNT(*) FROM production_headers p WHERE p.bom_id=b.id) prod_count FROM bom_headers b JOIN finished_products fp ON fp.id=b.finished_product_id WHERE b.is_active=0 ORDER BY b.id DESC') as $r){ echo '<tr><td>'.e($r['bom_code']).'</td><td>'.e($r['product_name']).'</td><td>'.dec($r['yield_qty']).'</td><td>'.(int)$r['prod_count'].'</td><td><div class="actions"><a class="btn light" href="?page=bom&edit='.(int)$r['id'].'">Edit</a><form method="post">'.csrf_field().'<input type="hidden" name="act" value="restore_bom"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Aktifkan Lagi</button></form></div></td></tr>'; }
+ echo '</table>';
 }
 elseif($page==='production'){
  if($_SERVER['REQUEST_METHOD']==='POST'){ $bom=one('SELECT * FROM bom_headers WHERE id=?',[(int)$_POST['bom_id']]); $qty=(float)postval('qty_produced','0'); if(!$bom||$qty<=0){flash('BOM/qty tidak valid','err');redirect('?page=production');} $factor=$qty/(float)$bom['yield_qty']; foreach(all('SELECT * FROM bom_items WHERE bom_id=?',[(int)$bom['id']]) as $bi){$need=(float)$bi['qty']*$factor; if(stock_qty('raw',(int)$bi['raw_material_id'])+0.0001 < $need){flash('Stok bahan tidak cukup untuk produksi.','err');redirect('?page=production');}} $no=next_no('PRD','production_headers','production_no'); execq('INSERT INTO production_headers(production_no,production_date,bom_id,finished_product_id,qty_produced,status,notes,created_by,posted_at) VALUES(?,?,?,?,?,?,?,?,NOW())',[$no,postval('production_date',date('Y-m-d')),(int)$bom['id'],(int)$bom['finished_product_id'],$qty,'posted',postval('notes'),(int)($u['id']??0)]); $pid=(int)db()->lastInsertId(); foreach(all('SELECT bi.*, rm.last_cost FROM bom_items bi JOIN raw_materials rm ON rm.id=bi.raw_material_id WHERE bi.bom_id=?',[(int)$bom['id']]) as $bi){$used=(float)$bi['qty']*$factor; execq('INSERT INTO production_items(production_id,raw_material_id,qty_used,unit,unit_cost) VALUES(?,?,?,?,?)',[$pid,(int)$bi['raw_material_id'],$used,$bi['unit'],(float)$bi['last_cost']]); add_ledger('raw',(int)$bi['raw_material_id'],'production','production_headers',$pid,0,$used,(float)$bi['last_cost'],$no,(int)($u['id']??0));} add_ledger('finished',(int)$bom['finished_product_id'],'production','production_headers',$pid,$qty,0,null,$no,(int)($u['id']??0)); flash('Produksi diposting: '.$no); redirect('?page=production'); }
@@ -156,7 +234,7 @@ elseif($page==='stock'){
 }
 elseif($page==='sales'){
  if($_SERVER['REQUEST_METHOD']==='POST'){ $store=one('SELECT * FROM stores WHERE id=?',[(int)$_POST['store_id']]); $no=next_no('KDS','kitchen_sales_headers','sale_no'); execq('INSERT INTO kitchen_sales_headers(sale_no,sale_date,store_id,sale_type,status,notes,created_by,posted_at) VALUES(?,?,?,?,?,?,?,NOW())',[$no,postval('sale_date',date('Y-m-d')),(int)$store['id'],'store_distribution','posted',postval('notes'),(int)($u['id']??0)]); $sid=(int)db()->lastInsertId(); $items=[];$total=0; foreach($_POST['finished_product_id']??[] as $i=>$fid){$fid=(int)$fid;$qty=(float)($_POST['qty'][$i]??0); if($fid<=0||$qty<=0)continue; if(stock_qty('finished',$fid)+0.0001<$qty){flash('Stok barang jadi tidak cukup.','err');redirect('?page=sales');} $fp=one('SELECT * FROM finished_products WHERE id=?',[$fid]); $priceRaw=trim((string)($_POST['transfer_price'][$i]??'')); $price=$priceRaw===''?(float)$fp['transfer_price']:(float)$priceRaw; $sub=$qty*$price; $total+=$sub; execq('INSERT INTO kitchen_sales_items(sale_id,finished_product_id,qty,unit,transfer_price,subtotal) VALUES(?,?,?,?,?,?)',[$sid,$fid,$qty,$fp['unit'],$price,$sub]); add_ledger('finished',$fid,'sale_to_store','kitchen_sales_headers',$sid,0,$qty,$price,$no,(int)($u['id']??0)); $map=one('SELECT * FROM finished_product_store_mappings WHERE finished_product_id=? AND store_id=?',[$fid,(int)$store['id']]); $items[]=['store_product_id'=>$map['store_product_id']??$fp['source_product_id']??$fid,'sku'=>$map['store_sku']??$fp['sku'],'name'=>$fp['name'],'qty'=>$qty,'unit'=>$fp['unit'],'transfer_price'=>$price]; }
- execq('UPDATE kitchen_sales_headers SET total_amount=? WHERE id=?',[$total,$sid]); $payload=['store_code'=>$store['store_code'],'source'=>'DAPUR_ADENA','transfer_no'=>$no,'transfer_date'=>postval('sale_date',date('Y-m-d')),'items'=>$items,'notes'=>postval('notes')]; [$c,$b,$e]=call_store_api($store,'api/v1/kitchen/receive-transfer.php',$payload,'POST'); $status=($c>=200&&$c<300)?'sent_to_store':'failed_sync'; execq('UPDATE kitchen_sales_headers SET status=?, synced_at=NOW(), remote_response=? WHERE id=?',[$status,($e?:$b),$sid]); execq('INSERT INTO api_logs(store_id,endpoint,direction,status,message,payload_json) VALUES(?,?,?,?,?,?)',[(int)$store['id'],'receive-transfer','out',$status,($e?:'HTTP '.$c),json_encode($payload,JSON_UNESCAPED_UNICODE)]); flash('Penjualan/transfer ke toko dibuat: '.$no.' status '.$status, $status==='failed_sync'?'err':'ok'); redirect('?page=sales'); }
+ execq('UPDATE kitchen_sales_headers SET total_amount=? WHERE id=?',[$total,$sid]); $payload=['store_code'=>$store['store_code'],'source'=>'DAPUR_ADENA','transfer_no'=>$no,'transfer_date'=>postval('sale_date',date('Y-m-d')),'items'=>$items,'notes'=>postval('notes')]; [$c,$b,$e]=call_store_api($store,'api/v1/kitchen/receive-transfer.php',$payload,'POST'); $remoteJson=json_decode((string)$b,true); $remoteStatus=is_array($remoteJson)?(string)($remoteJson['status']??''):''; $status=($c>=200&&$c<300)?'sent_to_store':'failed_sync'; $msg=$status==='sent_to_store'?'Transfer dikirim ke toko dan menunggu konfirmasi penerimaan manager toko.':'Penjualan/transfer ke toko dibuat tetapi gagal sync.'; if($remoteStatus==='pending_confirmation') $msg='Transfer dikirim ke toko. Status toko: pending konfirmasi manager.'; execq('UPDATE kitchen_sales_headers SET status=?, synced_at=NOW(), remote_response=? WHERE id=?',[$status,($e?:$b),$sid]); execq('INSERT INTO api_logs(store_id,endpoint,direction,status,message,payload_json) VALUES(?,?,?,?,?,?)',[(int)$store['id'],'receive-transfer','out',$status,($e?:'HTTP '.$c),json_encode($payload,JSON_UNESCAPED_UNICODE)]); flash($msg.' No: '.$no, $status==='failed_sync'?'err':'ok'); redirect('?page=sales'); }
  h2('Penjualan / Distribusi ke Toko'); $fps=all('SELECT * FROM finished_products WHERE is_active=1 ORDER BY name'); echo '<form method="post">'.csrf_field().'<div class="form-grid"><p><label>Tanggal<input name="sale_date" type="date" value="'.date('Y-m-d').'"></label></p><p><label>Toko Tujuan<select name="store_id">'; foreach(all('SELECT * FROM stores WHERE is_active=1 ORDER BY store_name') as $s) echo '<option value="'.(int)$s['id'].'">'.e($s['store_name']).'</option>'; echo '</select></label></p><p><label>Catatan<input name="notes"></label></p></div><table><tr><th>Produk</th><th>Qty</th><th>Harga Jual Dapur</th><th>Stok</th></tr>'; for($i=0;$i<6;$i++){ echo '<tr><td><select name="finished_product_id[]"><option value="">-</option>'; foreach($fps as $fp) echo '<option value="'.(int)$fp['id'].'">'.e($fp['name']).'</option>'; echo '</select></td><td><input name="qty[]" type="number" step="0.0001"></td><td><input name="transfer_price[]" type="number" step="0.01" placeholder="otomatis dari produk"></td><td class="muted">isi sesuai stok</td></tr>'; } echo '</table><p><button class="btn">Posting & Kirim API ke Toko</button></p></form>'; echo '<table><tr><th>No</th><th>Toko</th><th>Total</th><th>Status</th></tr>'; foreach(all('SELECT h.*,s.store_name FROM kitchen_sales_headers h LEFT JOIN stores s ON s.id=h.store_id ORDER BY h.id DESC LIMIT 30') as $r) echo '<tr><td>'.e($r['sale_no']).'</td><td>'.e($r['store_name']).'</td><td>'.rupiah($r['total_amount']).'</td><td><span class="badge">'.e($r['status']).'</span></td></tr>'; echo '</table>';
 }
 elseif($page==='activities'){

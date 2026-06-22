@@ -1,0 +1,3 @@
+-- Patch 2026-06-22: BOM edit/delete/hide.
+-- Struktur bom_headers pada versi ini sudah memiliki is_active.
+-- File ini disediakan sebagai penanda patch; tidak ada perubahan struktur wajib di database Dapur.
