@@ -48,8 +48,32 @@ function save_bom_items(int $bomId, array $rawIds, array $qtys): int {
  return $saved;
 }
 function call_store_api(array $store,string $path,array $payload=[],string $method='POST'){
- $url=rtrim($store['api_base_url'],'/').'/'.ltrim($path,'/'); $ch=curl_init($url); $headers=['Accept: application/json','Content-Type: application/json']; if(!empty($store['api_token'])) $headers[]='Authorization: Bearer '.$store['api_token']; curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>8,CURLOPT_CONNECTTIMEOUT=>3,CURLOPT_NOSIGNAL=>1,CURLOPT_HTTPHEADER=>$headers,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_MAXREDIRS=>3]); if($method==='POST'){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($payload,JSON_UNESCAPED_UNICODE));} $body=curl_exec($ch); $code=curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch); return [$code,$body,$err];
+ $url=rtrim((string)($store['api_base_url']??''),'/').'/'.ltrim($path,'/');
+ $headers=['Accept: application/json','Content-Type: application/json'];
+ if(!empty($store['api_token'])) $headers[]='Authorization: Bearer '.$store['api_token'];
+ $method=strtoupper($method);
+ if(function_exists('curl_init')){
+  $ch=curl_init($url);
+  curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>8,CURLOPT_CONNECTTIMEOUT=>3,CURLOPT_NOSIGNAL=>1,CURLOPT_HTTPHEADER=>$headers,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_MAXREDIRS=>3]);
+  if($method==='POST'){
+   curl_setopt($ch,CURLOPT_POST,true);
+   curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($payload,JSON_UNESCAPED_UNICODE));
+  }
+  $body=curl_exec($ch); $code=curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch);
+  return [(int)$code,(string)$body,(string)$err];
+ }
+ $opts=['http'=>['method'=>$method,'header'=>implode("
+",$headers),'timeout'=>8,'ignore_errors'=>true]];
+ if($method==='POST') $opts['http']['content']=json_encode($payload,JSON_UNESCAPED_UNICODE);
+ $body=@file_get_contents($url,false,stream_context_create($opts));
+ $code=0;
+ if(isset($http_response_header) && is_array($http_response_header)){
+  foreach($http_response_header as $h){ if(preg_match('/^HTTP\/\S+\s+(\d+)/',$h,$m)){ $code=(int)$m[1]; break; } }
+ }
+ $err=$body===false?'cURL tidak aktif dan fallback HTTP gagal. Cek allow_url_fopen/akses jaringan server.':'';
+ return [$code,(string)($body===false?'':$body),$err];
 }
+
 function store_api_message(int $code, string $body, string $err, string $endpoint): string{
  if($err!=='') return 'Gagal menghubungi API toko: '.$err;
  $json=json_decode(trim($body),true); $detail='';
@@ -128,11 +152,11 @@ elseif($page==='stores'){
    $s=one('SELECT * FROM stores WHERE id=?',[$id]);
    if(!$s){ flash('Toko tidak ditemukan.','err'); redirect('?page=stores'); }
    $refs=0;
-   $refs+=(int)one('SELECT COUNT(*) c FROM finished_products WHERE source_store_id=?',[$id])['c'];
-   $refs+=(int)one('SELECT COUNT(*) c FROM finished_product_store_mappings WHERE store_id=?',[$id])['c'];
-   $refs+=(int)one('SELECT COUNT(*) c FROM product_import_logs WHERE store_id=?',[$id])['c'];
-   $refs+=(int)one('SELECT COUNT(*) c FROM kitchen_sales_headers WHERE store_id=?',[$id])['c'];
-   $refs+=(int)one('SELECT COUNT(*) c FROM api_logs WHERE store_id=?',[$id])['c'];
+   $refs+=count_rows_if_table('finished_products','source_store_id=?',[$id]);
+   $refs+=count_rows_if_table('finished_product_store_mappings','store_id=?',[$id]);
+   $refs+=count_rows_if_table('product_import_logs','store_id=?',[$id]);
+   $refs+=count_rows_if_table('kitchen_sales_headers','store_id=?',[$id]);
+   $refs+=count_rows_if_table('api_logs','store_id=?',[$id]);
    if($refs>0){
     execq('UPDATE stores SET is_active=0 WHERE id=?',[$id]);
     flash('Toko punya histori transaksi/import/API, jadi dihapus aman dengan status Nonaktif.');
@@ -143,6 +167,7 @@ elseif($page==='stores'){
    redirect('?page=stores');
   }
   if(in_array($act,['test','test_ping','test_products','test_transfer'],true)){
+   try {
    $s=one('SELECT * FROM stores WHERE id=?',[(int)$_POST['id']]);
    if(!$s){ flash('Toko tidak ditemukan.','err'); redirect('?page=stores'); }
    if($act==='test' || $act==='test_products'){
@@ -191,6 +216,11 @@ elseif($page==='stores'){
      api_log_event((int)$s['id'],$res['endpoint'],'out','transfer_test_failed',$res['message'],['request'=>$payload,'response'=>response_payload((int)$res['http_code'],(string)$res['body'],(string)$res['curl_error'])]);
      flash('Test transfer gagal. '.$res['message'],'err');
     }
+    redirect('?page=stores');
+   }
+   } catch(Throwable $e) {
+    api_log_event((int)($_POST['id']??0),'api_test','out','fatal_error',$e->getMessage(),['exception'=>get_class($e)]);
+    flash('Aksi API gagal tanpa membuat halaman blank: '.$e->getMessage(),'err');
     redirect('?page=stores');
    }
   }

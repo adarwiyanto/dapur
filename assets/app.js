@@ -218,19 +218,20 @@ document.addEventListener('submit', async e => {
 (() => {
   document.addEventListener('submit', (event) => {
     const form = event.target.closest('form');
-    if (!form || form.matches('[data-product-import]') || form.dataset.noSubmitLock === '1') return;
+    const method = (form && (form.getAttribute('method') || 'get')).toLowerCase();
+    if (!form || method === 'get' || form.matches('[data-product-import]') || form.dataset.noSubmitLock === '1') return;
     if (form.dataset.submitting === '1') {
       event.preventDefault();
       return;
     }
     form.dataset.submitting = '1';
-    const buttons = Array.from(form.querySelectorAll('button[type="submit"], button:not([type])'));
-    buttons.forEach((button, index) => {
-      if (!button.dataset.originalText) button.dataset.originalText = button.textContent || '';
-      if (index === 0) button.textContent = button.dataset.loadingText || 'Memproses...';
-      button.disabled = true;
-      button.classList.add('is-loading');
-    });
+    const submitter = event.submitter && event.submitter.matches('button') ? event.submitter : form.querySelector('button[type="submit"], button:not([type])');
+    if (submitter) {
+      if (!submitter.dataset.originalText) submitter.dataset.originalText = submitter.textContent || '';
+      submitter.textContent = submitter.dataset.loadingText || 'Memproses...';
+      submitter.disabled = true;
+      submitter.classList.add('is-loading');
+    }
   }, true);
 
   window.addEventListener('pageshow', () => {

@@ -17,6 +17,13 @@ function table_exists(string $t): bool { $st=db()->prepare("SHOW TABLES LIKE ?")
 function one(string $sql, array $p=[]){$st=db()->prepare($sql);$st->execute($p);return $st->fetch();}
 function all(string $sql, array $p=[]): array {$st=db()->prepare($sql);$st->execute($p);return $st->fetchAll();}
 function execq(string $sql, array $p=[]): int {$st=db()->prepare($sql);$st->execute($p);return $st->rowCount();}
+function count_rows_if_table(string $table, string $where='', array $params=[]): int {
+ if(!preg_match('/^[A-Za-z0-9_]+$/',$table) || !table_exists($table)) return 0;
+ $sql='SELECT COUNT(*) c FROM '.$table;
+ if(trim($where)!=='') $sql.=' WHERE '.$where;
+ $r=one($sql,$params);
+ return (int)($r['c']??0);
+}
 function stock_qty(string $type, int $id): float { $st=db()->prepare('SELECT COALESCE(SUM(qty_in-qty_out),0) FROM stock_ledger WHERE item_type=? AND item_id=?'); $st->execute([$type,$id]); return (float)$st->fetchColumn(); }
 function stock_qty_map(string $type, array $ids=[]): array {
  $ids=array_values(array_unique(array_filter(array_map('intval',$ids),fn($v)=>$v>0)));
