@@ -223,7 +223,7 @@ document.addEventListener('submit', async e => {
     overlay.className = 'global-loading';
     overlay.setAttribute('data-global-loading', '');
     overlay.hidden = true;
-    overlay.innerHTML = '<div class="global-loading-card"><div class="global-loading-spinner" aria-hidden="true"></div><div><strong>Memproses...</strong><span>Perintah sudah diterima. Tunggu sebentar, jangan klik dua kali.</span></div></div>';
+    overlay.innerHTML = '<div class="global-loading-card"><div class="global-loading-spinner" aria-hidden="true"></div><div><strong>Memproses...</strong><span>Perintah dikirim. Tombol dikunci agar tidak dobel klik.</span></div></div>';
     document.body.appendChild(overlay);
     return overlay;
   };

@@ -48,7 +48,7 @@ function save_bom_items(int $bomId, array $rawIds, array $qtys): int {
  return $saved;
 }
 function call_store_api(array $store,string $path,array $payload=[],string $method='POST'){
- $url=rtrim($store['api_base_url'],'/').'/'.ltrim($path,'/'); $ch=curl_init($url); $headers=['Accept: application/json','Content-Type: application/json']; if(!empty($store['api_token'])) $headers[]='Authorization: Bearer '.$store['api_token']; curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>12,CURLOPT_CONNECTTIMEOUT=>5,CURLOPT_NOSIGNAL=>1,CURLOPT_HTTPHEADER=>$headers,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_MAXREDIRS=>3]); if($method==='POST'){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($payload,JSON_UNESCAPED_UNICODE));} $body=curl_exec($ch); $code=curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch); return [$code,$body,$err];
+ $url=rtrim($store['api_base_url'],'/').'/'.ltrim($path,'/'); $ch=curl_init($url); $headers=['Accept: application/json','Content-Type: application/json']; if(!empty($store['api_token'])) $headers[]='Authorization: Bearer '.$store['api_token']; curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>8,CURLOPT_CONNECTTIMEOUT=>3,CURLOPT_NOSIGNAL=>1,CURLOPT_HTTPHEADER=>$headers,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_MAXREDIRS=>3]); if($method==='POST'){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($payload,JSON_UNESCAPED_UNICODE));} $body=curl_exec($ch); $code=curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch); return [$code,$body,$err];
 }
 function store_api_message(int $code, string $body, string $err, string $endpoint): string{
  if($err!=='') return 'Gagal menghubungi API toko: '.$err;
@@ -56,7 +56,7 @@ function store_api_message(int $code, string $body, string $err, string $endpoin
  if(is_array($json)) $detail=(string)($json['message']??$json['error']??$json['status']??($json['ok']??''));
  if($detail==='') $detail=trim(strip_tags(substr($body,0,180)));
  if($code===401) return 'Token API toko tidak valid. Pastikan token dari menu Admin → API Dapur di toko sudah ditempel di Dapur → Toko & API. Endpoint: '.$endpoint.($detail!==''?' - '.$detail:'');
- if($code===403) return 'Token API toko aktif tetapi permission ditolak. Endpoint: '.$endpoint.($detail!==''?' - '.$detail:'');
+ if($code===403) return 'Token API toko aktif tetapi permission ditolak. Endpoint: '.$endpoint.'. Di toko, token harus kategori API ke Dapur dan memiliki permission stock_transfer/transfers.receive.'.($detail!==''?' - '.$detail:'');
  if($code===404) return 'Endpoint API Dapur di toko tidak ditemukan: '.$endpoint.'. Pastikan patch API Dapur di toko sudah terpasang.';
  return 'HTTP '.$code.($detail!==''?' - '.$detail:'');
 }
