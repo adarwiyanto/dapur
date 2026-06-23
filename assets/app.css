@@ -1056,3 +1056,21 @@ body.modal-open{overflow:hidden}
     grid-template-columns:1fr;
   }
 }
+
+/* Patch 20260623 - Error log, stok opname, API details */
+.log-pre{
+  max-width:760px;
+  max-height:260px;
+  overflow:auto;
+  white-space:pre-wrap;
+  word-break:break-word;
+  background:#fff7ed;
+  border:1px solid #ead9c8;
+  border-radius:10px;
+  padding:8px;
+  font-size:11px;
+}
+.table-scroll{overflow:auto;max-width:100%}
+.nested-table{margin-top:8px;font-size:11px}
+details summary{cursor:pointer;font-weight:700;color:#4b2418}
+button:disabled,.btn:disabled{opacity:.65;cursor:wait}

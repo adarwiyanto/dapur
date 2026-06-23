@@ -213,3 +213,21 @@ document.addEventListener('submit', async e => {
     if (event.key === 'Escape' && !modal.hidden) closeModal();
   });
 })();
+
+// Patch 20260623 - general submit feedback / double submit guard
+(() => {
+  document.addEventListener('submit', (event) => {
+    const form = event.target.closest('form');
+    if (!form || form.matches('[data-product-import]') || form.dataset.noSubmitLock === '1') return;
+    if (form.dataset.submitting === '1') {
+      event.preventDefault();
+      return;
+    }
+    const button = form.querySelector('button[type="submit"], button:not([type])');
+    if (!button) return;
+    form.dataset.submitting = '1';
+    button.dataset.originalText = button.textContent || '';
+    button.textContent = button.dataset.loadingText || 'Memproses...';
+    button.disabled = true;
+  }, true);
+})();

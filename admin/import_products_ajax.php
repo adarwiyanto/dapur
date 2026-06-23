@@ -6,11 +6,25 @@ verify_csrf();
 require_perm('products');
 
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 function import_json(array $data, int $code = 200): never {
     http_response_code($code);
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
+}
+
+function import_api_log(?int $storeId, string $endpoint, string $status, string $message, $payload = null): void {
+    try {
+        if (!table_exists('api_logs')) return;
+        $json = $payload === null ? null : (is_string($payload) ? $payload : json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        execq('INSERT INTO api_logs(store_id,endpoint,direction,status,message,payload_json) VALUES(?,?,?,?,?,?)', [$storeId, $endpoint, 'in', substr($status, 0, 40), $message, $json]);
+    } catch (Throwable $e) {}
+}
+
+function import_fail(int $code, array $data, ?int $storeId = null, string $endpoint = '', string $status = 'import_failed', $payload = null): never {
+    import_api_log($storeId, $endpoint, $status, (string)($data['message'] ?? 'Import gagal'), $payload);
+    import_json($data, $code);
 }
 
 function store_api_call_for_import(array $store, string $path, array $payload = [], string $method = 'GET'): array {
@@ -80,10 +94,10 @@ if (!$store) {
     import_json(['ok' => false, 'message' => 'Toko/API tidak ditemukan atau tidak aktif.'], 404);
 }
 
-$endpoint = 'api/dapur/products.php';
+$endpoint = 'api/v1/kitchen/products.php';
 [$httpCode, $body, $curlError] = store_api_call_for_import($store, $endpoint, [], 'GET');
 if ($curlError !== '') {
-    import_json(['ok' => false, 'message' => 'Gagal menghubungi API toko: ' . $curlError, 'http_code' => $httpCode], 502);
+    import_fail(502, ['ok' => false, 'message' => 'Gagal menghubungi API toko: ' . $curlError, 'http_code' => $httpCode], (int)$store['id'], $endpoint, 'import_failed', ['http_code'=>$httpCode,'curl_error'=>$curlError]);
 }
 if ($httpCode < 200 || $httpCode >= 300) {
     $preview = trim(substr((string)$body, 0, 240));
@@ -95,18 +109,18 @@ if ($httpCode < 200 || $httpCode >= 300) {
     } elseif ($httpCode === 404) {
         $message = 'Endpoint API Dapur di toko tidak ditemukan: ' . $endpoint . '. Pastikan patch API Dapur di toko sudah terpasang. Detail: HTTP 404' . ($preview !== '' ? ' - ' . $preview : '');
     }
-    import_json(['ok' => false, 'message' => $message, 'endpoint' => $endpoint, 'http_code' => $httpCode], 502);
+    import_fail(502, ['ok' => false, 'message' => $message, 'endpoint' => $endpoint, 'http_code' => $httpCode], (int)$store['id'], $endpoint, 'import_failed', ['http_code'=>$httpCode,'response_preview'=>substr((string)$body,0,1200)]);
 }
 
 $json = json_decode((string)$body, true);
 if (!is_array($json)) {
-    import_json(['ok' => false, 'message' => 'Response API toko bukan JSON valid: ' . json_last_error_msg(), 'http_code' => $httpCode], 502);
+    import_fail(502, ['ok' => false, 'message' => 'Response API toko bukan JSON valid: ' . json_last_error_msg(), 'http_code' => $httpCode], (int)$store['id'], $endpoint, 'invalid_json', ['http_code'=>$httpCode,'response_preview'=>substr((string)$body,0,1200)]);
 }
 
 $items = import_pick_items($json);
 if (!$items) {
     $preview = trim(substr((string)$body, 0, 240));
-    import_json(['ok' => false, 'message' => 'Response API valid dari endpoint ' . $endpoint . ', tetapi daftar produk kosong/tidak dikenali.' . ($preview !== '' ? ' Preview: ' . $preview : ''), 'http_code' => $httpCode], 422);
+    import_fail(422, ['ok' => false, 'message' => 'Response API valid dari endpoint ' . $endpoint . ', tetapi daftar produk kosong/tidak dikenali.' . ($preview !== '' ? ' Preview: ' . $preview : ''), 'http_code' => $httpCode], (int)$store['id'], $endpoint, 'import_failed', ['http_code'=>$httpCode,'response_preview'=>$preview]);
 }
 
 $inserted = 0;
@@ -162,7 +176,7 @@ try {
     if (db()->inTransaction()) {
         db()->rollBack();
     }
-    import_json(['ok' => false, 'message' => 'Import gagal saat simpan DB: ' . $e->getMessage(), 'http_code' => $httpCode], 500);
+    import_fail(500, ['ok' => false, 'message' => 'Import gagal saat simpan DB: ' . $e->getMessage(), 'http_code' => $httpCode], (int)$store['id'], $endpoint, 'import_failed', ['exception'=>$e->getMessage()]);
 }
 
 import_json([
