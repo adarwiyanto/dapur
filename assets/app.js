@@ -214,12 +214,63 @@ document.addEventListener('submit', async e => {
   });
 })();
 
+
+// Patch 20260623e - API test inline, tanpa full page reload/blank screen
+(() => {
+  const statusBox = document.getElementById('store-api-status');
+  const showStatus = (ok, message) => {
+    if (!statusBox) return;
+    statusBox.hidden = false;
+    statusBox.className = 'store-api-status notice ' + (ok ? 'ok' : 'err');
+    statusBox.textContent = message || (ok ? 'Sukses.' : 'Gagal.');
+    statusBox.scrollIntoView({block:'nearest', behavior:'smooth'});
+  };
+
+  document.addEventListener('submit', async (event) => {
+    const form = event.target.closest('form[data-store-api-test]');
+    if (!form) return;
+    event.preventDefault();
+    if (form.dataset.submitting === '1') return;
+    form.dataset.submitting = '1';
+
+    const submitter = event.submitter && event.submitter.matches('button') ? event.submitter : form.querySelector('button');
+    if (submitter) {
+      submitter.dataset.originalText = submitter.dataset.originalText || submitter.textContent || '';
+      submitter.textContent = submitter.dataset.loadingText || 'Memproses...';
+      submitter.disabled = true;
+      submitter.classList.add('is-loading');
+    }
+    showStatus(true, 'Memproses test API, halaman tetap bisa dipakai...');
+
+    try {
+      const response = await fetch(form.action || window.location.href, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: {'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json'}
+      });
+      const data = await response.json().catch(() => null);
+      if (!data) throw new Error('Response server bukan JSON valid.');
+      showStatus(!!data.ok, data.message || (data.ok ? 'Sukses.' : 'Gagal.'));
+    } catch (err) {
+      showStatus(false, 'Aksi API gagal tanpa reload: ' + err.message);
+    } finally {
+      form.dataset.submitting = '0';
+      if (submitter) {
+        submitter.disabled = false;
+        submitter.classList.remove('is-loading');
+        submitter.textContent = submitter.dataset.originalText || 'Test';
+      }
+    }
+  });
+})();
+
 // Patch 20260623d - lightweight submit guard, tanpa overlay global agar UI tidak terasa freeze
 (() => {
   document.addEventListener('submit', (event) => {
     const form = event.target.closest('form');
     const method = (form && (form.getAttribute('method') || 'get')).toLowerCase();
-    if (!form || method === 'get' || form.matches('[data-product-import]') || form.dataset.noSubmitLock === '1') return;
+    if (!form || method === 'get' || form.matches('[data-product-import]') || form.matches('[data-store-api-test]') || form.dataset.noSubmitLock === '1') return;
     if (form.dataset.submitting === '1') {
       event.preventDefault();
       return;

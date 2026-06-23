@@ -125,6 +125,24 @@ function ensure_stock_opname_tables(): void {
  db()->exec("CREATE TABLE IF NOT EXISTS stock_opname_headers (id BIGINT AUTO_INCREMENT PRIMARY KEY, opname_no VARCHAR(60) UNIQUE NOT NULL, opname_date DATE NOT NULL, item_type VARCHAR(20) NOT NULL, total_items INT NOT NULL DEFAULT 0, notes TEXT NULL, created_by INT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
  db()->exec("CREATE TABLE IF NOT EXISTS stock_opname_items (id BIGINT AUTO_INCREMENT PRIMARY KEY, opname_id BIGINT NOT NULL, item_type VARCHAR(20) NOT NULL, item_id INT NOT NULL, item_name VARCHAR(180) NULL, system_qty DECIMAL(18,4) NOT NULL DEFAULT 0, physical_qty DECIMAL(18,4) NOT NULL DEFAULT 0, difference_qty DECIMAL(18,4) NOT NULL DEFAULT 0, unit VARCHAR(40) NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, KEY idx_opname_id(opname_id), KEY idx_item(item_type,item_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 }
+
+function wants_ajax_response(): bool {
+ $xr=(string)($_SERVER['HTTP_X_REQUESTED_WITH']??'');
+ $accept=(string)($_SERVER['HTTP_ACCEPT']??'');
+ return strtolower($xr)==='xmlhttprequest' || strpos($accept,'application/json')!==false;
+}
+function json_response(array $payload,int $code=200): void {
+ http_response_code($code);
+ header('Content-Type: application/json; charset=utf-8');
+ echo json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+ exit;
+}
+function finish_store_test(bool $ok,string $message,array $extra=[]): void {
+ if(wants_ajax_response()) json_response(array_merge(['ok'=>$ok,'message'=>$message],$extra),$ok?200:422);
+ flash($message,$ok?'ok':'err');
+ redirect('?page=stores');
+}
+
 $f=flash();
 ?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css"><script src="../assets/app.js" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php foreach($menus as $k=>$m){ if(($m[3]??'')==='owner' && !is_owner()) continue; if(can($m[2])) echo '<a class="'.($page===$k?'active':'').'" href="?page='.e($k).'"><span>'.e($m[1]).'</span> '.e($m[0]).'</a>'; } ?><a href="../logout.php">⎋ Logout</a></nav></aside><main class="main"><div class="topbar"><div><strong><?=e($menus[$page][0])?></strong><div class="muted small">Login: <?=e($u['name']??'')?></div></div></div><?php if($f): ?><div class="notice <?=e($f[1])?>"><?=e($f[0])?></div><?php endif; ?><div class="card">
 <?php
@@ -169,7 +187,7 @@ elseif($page==='stores'){
   if(in_array($act,['test','test_ping','test_products','test_transfer'],true)){
    try {
    $s=one('SELECT * FROM stores WHERE id=?',[(int)$_POST['id']]);
-   if(!$s){ flash('Toko tidak ditemukan.','err'); redirect('?page=stores'); }
+   if(!$s){ finish_store_test(false,'Toko tidak ditemukan.'); }
    if($act==='test' || $act==='test_products'){
     $endpoint='api/v1/kitchen/products.php';
     [$c,$b,$e]=call_store_api($s,$endpoint,[],'GET');
@@ -178,13 +196,12 @@ elseif($page==='stores'){
      $items=pick_store_products($json);
      $total=(int)($json['total']??count($items));
      api_log_event((int)$s['id'],$endpoint,'out','product_test_ok','Test produk sukses. Produk terbaca: '.$total,response_payload((int)$c,(string)$b,(string)$e));
-     flash('Test produk sukses. Token kitchen valid. Produk terbaca: '.$total.' item.','ok');
+     finish_store_test(true,'Test produk sukses. Token kitchen valid. Produk terbaca: '.$total.' item.');
     }else{
      $msg=store_api_message((int)$c,(string)$b,(string)$e,$endpoint);
      api_log_event((int)$s['id'],$endpoint,'out','product_test_failed',$msg,response_payload((int)$c,(string)$b,(string)$e));
-     flash('Test produk gagal. '.$msg,'err');
+     finish_store_test(false,'Test produk gagal. '.$msg);
     }
-    redirect('?page=stores');
    }
    if($act==='test_ping'){
     $endpoint='api/v1/kitchen/ping.php';
@@ -192,44 +209,42 @@ elseif($page==='stores'){
     $json=json_decode(trim((string)$b),true);
     if($c>=200&&$c<300&&is_array($json)&&!empty($json['ok'])){
      api_log_event((int)$s['id'],$endpoint,'out','ping_ok','Ping API receiver sukses.',response_payload((int)$c,(string)$b,(string)$e));
-     flash('Ping API receiver sukses. Endpoint transfer tersedia.','ok');
+     finish_store_test(true,'Ping API receiver sukses. Endpoint transfer tersedia.');
     }else{
      $msg=store_api_message((int)$c,(string)$b,(string)$e,$endpoint);
      api_log_event((int)$s['id'],$endpoint,'out','ping_failed',$msg,response_payload((int)$c,(string)$b,(string)$e));
-     flash('Ping API gagal. '.$msg,'err');
+     finish_store_test(false,'Ping API gagal. '.$msg);
     }
-    redirect('?page=stores');
    }
    if($act==='test_transfer'){
     $map=one('SELECT m.*,fp.name,fp.unit,fp.transfer_price FROM finished_product_store_mappings m JOIN finished_products fp ON fp.id=m.finished_product_id WHERE m.store_id=? AND m.is_active=1 AND fp.is_active=1 ORDER BY m.id LIMIT 1',[(int)$s['id']]);
     if(!$map){
      $msg='Belum ada mapping produk aktif untuk toko ini. Import produk dulu atau pastikan produk sudah memiliki mapping toko.';
      api_log_event((int)$s['id'],'api/v1/kitchen/receive-transfer.php','out','transfer_test_failed',$msg,['reason'=>'mapping_missing']);
-     flash('Test transfer gagal. '.$msg,'err'); redirect('?page=stores');
+     finish_store_test(false,'Test transfer gagal. '.$msg);
     }
     $payload=['dry_run'=>true,'store_code'=>$s['store_code'],'source'=>'DAPUR_ADENA','transfer_no'=>'TEST-'.date('YmdHis').'-'.(int)$s['id'],'transfer_date'=>date('Y-m-d'),'items'=>[['store_product_id'=>(string)$map['store_product_id'],'sku'=>(string)($map['store_sku']??''),'name'=>(string)($map['store_product_name']??$map['name']),'qty'=>1,'unit'=>(string)($map['unit']??'pcs'),'transfer_price'=>(float)($map['transfer_price']??0)]],'notes'=>'Dry-run test transfer dari Dapur. Tidak mengubah stok.'];
     $res=send_kitchen_transfer($s,$payload);
     if($res['ok']){
      api_log_event((int)$s['id'],$res['endpoint'],'out','transfer_test_ok',$res['message'],['request'=>$payload,'response'=>response_payload((int)$res['http_code'],(string)$res['body'],(string)$res['curl_error'])]);
-     flash('Test transfer sukses. Endpoint transfer valid dan dry-run tidak mengubah stok.','ok');
+     finish_store_test(true,'Test transfer sukses. Endpoint transfer valid dan dry-run tidak mengubah stok.');
     }else{
      api_log_event((int)$s['id'],$res['endpoint'],'out','transfer_test_failed',$res['message'],['request'=>$payload,'response'=>response_payload((int)$res['http_code'],(string)$res['body'],(string)$res['curl_error'])]);
-     flash('Test transfer gagal. '.$res['message'],'err');
+     finish_store_test(false,'Test transfer gagal. '.$res['message']);
     }
-    redirect('?page=stores');
    }
    } catch(Throwable $e) {
     api_log_event((int)($_POST['id']??0),'api_test','out','fatal_error',$e->getMessage(),['exception'=>get_class($e)]);
-    flash('Aksi API gagal tanpa membuat halaman blank: '.$e->getMessage(),'err');
-    redirect('?page=stores');
+    finish_store_test(false,'Aksi API gagal tanpa membuat halaman blank: '.$e->getMessage());
    }
   }
  }
  $editId=(int)($_GET['edit']??0);
  $edit=$editId>0?one('SELECT * FROM stores WHERE id=?',[$editId]):null;
  h2('Multi Toko / Setting API');
- echo '<form method="post" class="form-grid compact-form">'.csrf_field().'<input type="hidden" name="act" value="save"><input type="hidden" name="id" value="'.(int)($edit['id']??0).'"><p><label>Kode Toko<input name="store_code" value="'.e($edit['store_code']??'').'" required></label></p><p><label>Nama Toko<input name="store_name" value="'.e($edit['store_name']??'').'" required></label></p><p><label>Base URL API Toko<input name="api_base_url" value="'.e($edit['api_base_url']??'').'" placeholder="https://toko.adena.co.id" required></label></p><p><label>Token API Toko<input name="api_token" value="'.e($edit['api_token']??'').'"></label></p><p><label>Catatan<input name="notes" value="'.e($edit['notes']??'').'"></label></p><p><label><input type="checkbox" name="is_active" '.((!$edit||!empty($edit['is_active']))?'checked':'').' style="width:auto"> Aktif</label></p><p class="actions"><button class="btn">'.($edit?'Update':'Simpan').'</button>'.($edit?' <a class="btn light" href="?page=stores">Batal</a>':'').'</p></form>';
- echo '<table><tr><th>Kode</th><th>Nama</th><th>API</th><th>Status</th><th>Aksi</th></tr>'; foreach(all('SELECT * FROM stores ORDER BY store_name') as $r){echo '<tr><td>'.e($r['store_code']).'</td><td>'.e($r['store_name']).'</td><td>'.e($r['api_base_url']).'</td><td>'.($r['is_active']?'Aktif':'Nonaktif').'</td><td><div class="actions"><form method="post">'.csrf_field().'<input type="hidden" name="act" value="test_ping"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Ping</button></form><form method="post">'.csrf_field().'<input type="hidden" name="act" value="test_products"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Test Produk</button></form><form method="post">'.csrf_field().'<input type="hidden" name="act" value="test_transfer"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Test Transfer</button></form><a class="btn light" href="?page=stores&edit='.(int)$r['id'].'">Edit</a><form method="post" onsubmit="return confirm(&quot;Hapus/nonaktifkan toko ini?&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn danger">Hapus</button></form></div></td></tr>'; } echo '</table>';
+ echo '<form method="post" class="form-grid compact-form store-form">'.csrf_field().'<input type="hidden" name="act" value="save"><input type="hidden" name="id" value="'.(int)($edit['id']??0).'"><p><label>Kode Toko<input name="store_code" value="'.e($edit['store_code']??'').'" required></label></p><p><label>Nama Toko<input name="store_name" value="'.e($edit['store_name']??'').'" required></label></p><p><label>Base URL API Toko<input name="api_base_url" value="'.e($edit['api_base_url']??'').'" placeholder="https://toko.adena.co.id" required></label></p><p><label>Token API Toko<input name="api_token" value="'.e($edit['api_token']??'').'"></label></p><p><label>Catatan<input name="notes" value="'.e($edit['notes']??'').'"></label></p><p><label class="check-inline"><input type="checkbox" name="is_active" '.((!$edit||!empty($edit['is_active']))?'checked':'').'> Aktif</label></p><p class="actions store-save-actions"><button class="btn">'.($edit?'Update':'Simpan').'</button>'.($edit?' <a class="btn light" href="?page=stores">Batal</a>':'').'</p></form>';
+ echo '<div id="store-api-status" class="store-api-status" hidden></div>';
+ echo '<div class="table-scroll"><table class="compact-table stores-table"><tr><th>Kode</th><th>Nama</th><th>API</th><th>Status</th><th>Aksi</th></tr>'; foreach(all('SELECT * FROM stores ORDER BY store_name') as $r){echo '<tr><td>'.e($r['store_code']).'</td><td>'.e($r['store_name']).'</td><td class="api-url-cell">'.e($r['api_base_url']).'</td><td>'.($r['is_active']?'Aktif':'Nonaktif').'</td><td><div class="actions"><form method="post" data-store-api-test="1">'.csrf_field().'<input type="hidden" name="act" value="test_ping"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light" data-loading-text="Ping...">Ping</button></form><form method="post" data-store-api-test="1">'.csrf_field().'<input type="hidden" name="act" value="test_products"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light" data-loading-text="Test...">Test Produk</button></form><form method="post" data-store-api-test="1">'.csrf_field().'<input type="hidden" name="act" value="test_transfer"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light" data-loading-text="Test...">Test Transfer</button></form><a class="btn light" href="?page=stores&edit='.(int)$r['id'].'">Edit</a><form method="post" onsubmit="return confirm(&quot;Hapus/nonaktifkan toko ini?&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn danger">Hapus</button></form></div></td></tr>'; } echo '</table></div>';
 }
 elseif($page==='raw'){
  if($_SERVER['REQUEST_METHOD']==='POST'){execq('INSERT INTO raw_materials(code,name,category,unit,min_stock,last_cost,is_active) VALUES(?,?,?,?,?,?,1) ON DUPLICATE KEY UPDATE name=VALUES(name),category=VALUES(category),unit=VALUES(unit),min_stock=VALUES(min_stock),last_cost=VALUES(last_cost)',[postval('code')?:null,postval('name'),postval('category'),postval('unit','pcs'),(float)postval('min_stock','0'),(float)postval('last_cost','0')]); flash('Bahan baku disimpan.'); redirect('?page=raw');}

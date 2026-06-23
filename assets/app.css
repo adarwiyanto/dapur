@@ -274,3 +274,91 @@ button.is-loading,.btn.is-loading{opacity:.72;cursor:wait}
 .pagination{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:10px 0}
 .pagination .page-current{padding:5px 9px;border-radius:8px;background:#f6eadf;border:1px solid #ead9c8;font-size:12px}
 .transfer-note{padding:8px 10px;border:1px solid #ead9c8;background:#fff7ed;border-radius:10px;margin:8px 0 10px;font-size:12px}
+
+/* Patch 20260623e - UI lag fix: scope table scroll, ringan untuk desktop */
+html{scroll-behavior:auto}
+body{overflow-y:scroll}
+.app-shell{align-items:stretch}
+.main{min-width:0;contain:layout paint style}
+.card{overflow:visible}
+
+/* Reset rule lama yang membuat semua tabel display:block dan memicu reflow besar */
+.main table{
+  display:table;
+  width:100%;
+  max-width:100%;
+  overflow:visible;
+  white-space:normal;
+  table-layout:auto;
+}
+.main table th,
+.main table td{
+  white-space:normal;
+}
+.table-scroll{
+  width:100%;
+  max-width:100%;
+  overflow-x:auto;
+  overflow-y:visible;
+  -webkit-overflow-scrolling:touch;
+}
+.table-scroll table{
+  min-width:max-content;
+  width:max-content;
+}
+.compact-table th,
+.compact-table td{
+  white-space:nowrap;
+}
+.stores-table .api-url-cell{
+  max-width:280px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.finished-table-wrap .finished-products-table{
+  display:table;
+  width:max-content;
+  max-width:none;
+  white-space:nowrap;
+}
+.finished-table-wrap .finished-products-table th,
+.finished-table-wrap .finished-products-table td{
+  white-space:nowrap;
+}
+
+.store-form{
+  grid-template-columns:90px 180px minmax(220px, 1fr) minmax(210px, 1fr) minmax(180px, 1fr) 70px auto;
+  gap:8px;
+  align-items:end;
+}
+.store-form p{margin:0}
+.store-save-actions{justify-content:flex-end}
+.check-inline{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:30px;
+}
+.check-inline input[type="checkbox"]{
+  width:14px;
+  min-width:14px;
+  height:14px;
+  min-height:14px;
+  padding:0;
+}
+.store-api-status[hidden]{display:none!important}
+.store-api-status{
+  margin:0 0 10px;
+}
+button.is-loading,.btn.is-loading{
+  transform:none!important;
+}
+@media (max-width:1280px){
+  .store-form{grid-template-columns:repeat(3,minmax(150px,1fr))}
+  .store-save-actions{justify-content:flex-start}
+}
+@media (max-width:760px){
+  .app-shell{display:block}
+  .sidebar{position:relative;height:auto;width:100%}
+  .store-form{grid-template-columns:1fr}
+}
