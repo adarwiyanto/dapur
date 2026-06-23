@@ -214,25 +214,8 @@ document.addEventListener('submit', async e => {
   });
 })();
 
-// Patch 20260623 - general submit feedback / double submit guard + overlay anti-lag
+// Patch 20260623d - lightweight submit guard, tanpa overlay global agar UI tidak terasa freeze
 (() => {
-  const ensureOverlay = () => {
-    let overlay = document.querySelector('[data-global-loading]');
-    if (overlay) return overlay;
-    overlay = document.createElement('div');
-    overlay.className = 'global-loading';
-    overlay.setAttribute('data-global-loading', '');
-    overlay.hidden = true;
-    overlay.innerHTML = '<div class="global-loading-card"><div class="global-loading-spinner" aria-hidden="true"></div><div><strong>Memproses...</strong><span>Perintah dikirim. Tombol dikunci agar tidak dobel klik.</span></div></div>';
-    document.body.appendChild(overlay);
-    return overlay;
-  };
-  const showOverlay = () => {
-    const overlay = ensureOverlay();
-    overlay.hidden = false;
-    document.body.classList.add('is-busy');
-  };
-
   document.addEventListener('submit', (event) => {
     const form = event.target.closest('form');
     if (!form || form.matches('[data-product-import]') || form.dataset.noSubmitLock === '1') return;
@@ -246,18 +229,16 @@ document.addEventListener('submit', async e => {
       if (!button.dataset.originalText) button.dataset.originalText = button.textContent || '';
       if (index === 0) button.textContent = button.dataset.loadingText || 'Memproses...';
       button.disabled = true;
+      button.classList.add('is-loading');
     });
-    showOverlay();
   }, true);
 
   window.addEventListener('pageshow', () => {
-    const overlay = document.querySelector('[data-global-loading]');
-    if (overlay) overlay.hidden = true;
-    document.body.classList.remove('is-busy');
     document.querySelectorAll('form[data-submitting="1"]').forEach((form) => {
       form.dataset.submitting = '0';
       form.querySelectorAll('button').forEach((button) => {
         button.disabled = false;
+        button.classList.remove('is-loading');
         if (button.dataset.originalText) button.textContent = button.dataset.originalText;
       });
     });

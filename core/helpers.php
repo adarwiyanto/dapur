@@ -18,4 +18,16 @@ function one(string $sql, array $p=[]){$st=db()->prepare($sql);$st->execute($p);
 function all(string $sql, array $p=[]): array {$st=db()->prepare($sql);$st->execute($p);return $st->fetchAll();}
 function execq(string $sql, array $p=[]): int {$st=db()->prepare($sql);$st->execute($p);return $st->rowCount();}
 function stock_qty(string $type, int $id): float { $st=db()->prepare('SELECT COALESCE(SUM(qty_in-qty_out),0) FROM stock_ledger WHERE item_type=? AND item_id=?'); $st->execute([$type,$id]); return (float)$st->fetchColumn(); }
+function stock_qty_map(string $type, array $ids=[]): array {
+ $ids=array_values(array_unique(array_filter(array_map('intval',$ids),fn($v)=>$v>0)));
+ if(count($ids)<1) return [];
+ $ph=implode(',',array_fill(0,count($ids),'?'));
+ $params=array_merge([$type],$ids);
+ $st=db()->prepare('SELECT item_id, COALESCE(SUM(qty_in-qty_out),0) qty FROM stock_ledger WHERE item_type=? AND item_id IN ('.$ph.') GROUP BY item_id');
+ $st->execute($params);
+ $map=[];
+ foreach($st->fetchAll() as $r) $map[(int)$r['item_id']]=(float)$r['qty'];
+ foreach($ids as $id) if(!array_key_exists($id,$map)) $map[$id]=0.0;
+ return $map;
+}
 function add_ledger(string $type,int $id,string $trans,string $ref,int $refid,float $in,float $out,?float $cost,string $note='',?int $uid=null): void { $st=db()->prepare('INSERT INTO stock_ledger(item_type,item_id,trans_type,ref_table,ref_id,qty_in,qty_out,unit_cost,note,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,NOW())'); $st->execute([$type,$id,$trans,$ref,$refid,$in,$out,$cost,$note,$uid]); }
