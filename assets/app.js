@@ -214,8 +214,57 @@ document.addEventListener('submit', async e => {
   });
 })();
 
+// Patch 20260623 - general submit feedback / double submit guard + overlay anti-lag
+(() => {
+  const ensureOverlay = () => {
+    let overlay = document.querySelector('[data-global-loading]');
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.className = 'global-loading';
+    overlay.setAttribute('data-global-loading', '');
+    overlay.hidden = true;
+    overlay.innerHTML = '<div class="global-loading-card"><div class="global-loading-spinner" aria-hidden="true"></div><div><strong>Memproses...</strong><span>Perintah sudah diterima. Tunggu sebentar, jangan klik dua kali.</span></div></div>';
+    document.body.appendChild(overlay);
+    return overlay;
+  };
+  const showOverlay = () => {
+    const overlay = ensureOverlay();
+    overlay.hidden = false;
+    document.body.classList.add('is-busy');
+  };
 
-// Patch 20260623e - API test inline, tanpa full page reload/blank screen
+  document.addEventListener('submit', (event) => {
+    const form = event.target.closest('form');
+    if (!form || form.matches('[data-product-import]') || form.matches('[data-store-api-test]') || form.dataset.noSubmitLock === '1') return;
+    if (form.dataset.submitting === '1') {
+      event.preventDefault();
+      return;
+    }
+    form.dataset.submitting = '1';
+    const buttons = Array.from(form.querySelectorAll('button[type="submit"], button:not([type])'));
+    buttons.forEach((button, index) => {
+      if (!button.dataset.originalText) button.dataset.originalText = button.textContent || '';
+      if (index === 0) button.textContent = button.dataset.loadingText || 'Memproses...';
+      button.disabled = true;
+    });
+    showOverlay();
+  }, true);
+
+  window.addEventListener('pageshow', () => {
+    const overlay = document.querySelector('[data-global-loading]');
+    if (overlay) overlay.hidden = true;
+    document.body.classList.remove('is-busy');
+    document.querySelectorAll('form[data-submitting="1"]').forEach((form) => {
+      form.dataset.submitting = '0';
+      form.querySelectorAll('button').forEach((button) => {
+        button.disabled = false;
+        if (button.dataset.originalText) button.textContent = button.dataset.originalText;
+      });
+    });
+  });
+})();
+
+// Patch 20260623f - Toko & API test inline with safe JSON fallback
 (() => {
   const statusBox = document.getElementById('store-api-status');
   const showStatus = (ok, message) => {
@@ -223,7 +272,6 @@ document.addEventListener('submit', async e => {
     statusBox.hidden = false;
     statusBox.className = 'store-api-status notice ' + (ok ? 'ok' : 'err');
     statusBox.textContent = message || (ok ? 'Sukses.' : 'Gagal.');
-    statusBox.scrollIntoView({block:'nearest', behavior:'smooth'});
   };
 
   document.addEventListener('submit', async (event) => {
@@ -240,17 +288,23 @@ document.addEventListener('submit', async e => {
       submitter.disabled = true;
       submitter.classList.add('is-loading');
     }
-    showStatus(true, 'Memproses test API, halaman tetap bisa dipakai...');
+    showStatus(true, 'Memproses test API...');
 
     try {
       const response = await fetch(form.action || window.location.href, {
         method: 'POST',
         body: new FormData(form),
         credentials: 'same-origin',
-        headers: {'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json'}
+        headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}
       });
-      const data = await response.json().catch(() => null);
-      if (!data) throw new Error('Response server bukan JSON valid.');
+      const text = await response.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch (err) { data = null; }
+      if (!data) {
+        showStatus(false, 'Server membalas bukan JSON. Halaman akan dimuat ulang agar status asli tampil.');
+        window.setTimeout(() => { form.removeAttribute('data-store-api-test'); form.submit(); }, 600);
+        return;
+      }
       showStatus(!!data.ok, data.message || (data.ok ? 'Sukses.' : 'Gagal.'));
     } catch (err) {
       showStatus(false, 'Aksi API gagal tanpa reload: ' + err.message);
@@ -262,37 +316,5 @@ document.addEventListener('submit', async e => {
         submitter.textContent = submitter.dataset.originalText || 'Test';
       }
     }
-  });
-})();
-
-// Patch 20260623d - lightweight submit guard, tanpa overlay global agar UI tidak terasa freeze
-(() => {
-  document.addEventListener('submit', (event) => {
-    const form = event.target.closest('form');
-    const method = (form && (form.getAttribute('method') || 'get')).toLowerCase();
-    if (!form || method === 'get' || form.matches('[data-product-import]') || form.matches('[data-store-api-test]') || form.dataset.noSubmitLock === '1') return;
-    if (form.dataset.submitting === '1') {
-      event.preventDefault();
-      return;
-    }
-    form.dataset.submitting = '1';
-    const submitter = event.submitter && event.submitter.matches('button') ? event.submitter : form.querySelector('button[type="submit"], button:not([type])');
-    if (submitter) {
-      if (!submitter.dataset.originalText) submitter.dataset.originalText = submitter.textContent || '';
-      submitter.textContent = submitter.dataset.loadingText || 'Memproses...';
-      submitter.disabled = true;
-      submitter.classList.add('is-loading');
-    }
-  }, true);
-
-  window.addEventListener('pageshow', () => {
-    document.querySelectorAll('form[data-submitting="1"]').forEach((form) => {
-      form.dataset.submitting = '0';
-      form.querySelectorAll('button').forEach((button) => {
-        button.disabled = false;
-        button.classList.remove('is-loading');
-        if (button.dataset.originalText) button.textContent = button.dataset.originalText;
-      });
-    });
   });
 })();
