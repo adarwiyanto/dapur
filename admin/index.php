@@ -48,7 +48,7 @@ function save_bom_items(int $bomId, array $rawIds, array $qtys): int {
  return $saved;
 }
 function call_store_api(array $store,string $path,array $payload=[],string $method='POST'){
- $url=rtrim($store['api_base_url'],'/').'/'.ltrim($path,'/'); $ch=curl_init($url); $headers=['Accept: application/json','Content-Type: application/json']; if(!empty($store['api_token'])) $headers[]='Authorization: Bearer '.$store['api_token']; curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_HTTPHEADER=>$headers,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_MAXREDIRS=>3]); if($method==='POST'){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($payload,JSON_UNESCAPED_UNICODE));} $body=curl_exec($ch); $code=curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch); return [$code,$body,$err];
+ $url=rtrim($store['api_base_url'],'/').'/'.ltrim($path,'/'); $ch=curl_init($url); $headers=['Accept: application/json','Content-Type: application/json']; if(!empty($store['api_token'])) $headers[]='Authorization: Bearer '.$store['api_token']; curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>12,CURLOPT_CONNECTTIMEOUT=>5,CURLOPT_NOSIGNAL=>1,CURLOPT_HTTPHEADER=>$headers,CURLOPT_FOLLOWLOCATION=>true,CURLOPT_MAXREDIRS=>3]); if($method==='POST'){curl_setopt($ch,CURLOPT_POST,true);curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($payload,JSON_UNESCAPED_UNICODE));} $body=curl_exec($ch); $code=curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch); return [$code,$body,$err];
 }
 function store_api_message(int $code, string $body, string $err, string $endpoint): string{
  if($err!=='') return 'Gagal menghubungi API toko: '.$err;

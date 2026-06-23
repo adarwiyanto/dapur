@@ -43,11 +43,12 @@ function store_api_call_for_import(array $store, string $path, array $payload = 
     }
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 45,
-        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_CONNECTTIMEOUT => 6,
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_MAXREDIRS => 3,
+        CURLOPT_NOSIGNAL => 1,
     ]);
     if (strtoupper($method) === 'POST') {
         curl_setopt($ch, CURLOPT_POST, true);
