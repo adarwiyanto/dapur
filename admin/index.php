@@ -83,8 +83,12 @@ function build_transfer_payload(array $store, int $saleId): array {
  $items=[];
  foreach(all('SELECT i.*,fp.name,fp.sku,fp.source_product_id,fp.unit default_unit FROM kitchen_sales_items i JOIN finished_products fp ON fp.id=i.finished_product_id WHERE i.sale_id=? ORDER BY i.id',[$saleId]) as $r){
   $map=one('SELECT * FROM finished_product_store_mappings WHERE finished_product_id=? AND store_id=? AND is_active=1',[(int)$r['finished_product_id'],(int)$store['id']]);
-  $storeProductId=(string)($map['store_product_id']??$r['source_product_id']??'');
-  $items[]=['store_product_id'=>$storeProductId,'sku'=>$map['store_sku']??$r['sku'],'name'=>$map['store_product_name']??$r['name'],'qty'=>(float)$r['qty'],'unit'=>$r['unit']?:$r['default_unit'],'transfer_price'=>(float)$r['transfer_price']];
+  // Mapping cabang tidak wajib. Bila belum ada, toko/cabang akan mencocokkan dari SKU/nama atau membuat produk otomatis saat transfer diterima.
+  $storeProductId=(string)($map['store_product_id']??'');
+  $sku=(string)($map['store_sku']??$r['sku']??'');
+  if($sku==='') $sku='DAPUR-FP-'.(int)$r['finished_product_id'];
+  $name=(string)($map['store_product_name']??$r['name']??'');
+  $items[]=['store_product_id'=>$storeProductId,'sku'=>$sku,'name'=>$name,'qty'=>(float)$r['qty'],'unit'=>$r['unit']?:$r['default_unit'],'transfer_price'=>(float)$r['transfer_price']];
  }
  return ['store_code'=>$store['store_code'],'source'=>'DAPUR_ADENA','transfer_no'=>$h['sale_no'],'transfer_date'=>$h['sale_date'],'items'=>$items,'notes'=>$h['notes']??''];
 }
@@ -415,7 +419,7 @@ elseif($page==='sales'){
   $res=send_kitchen_transfer($store,$payload);
   $remoteText=$res['curl_error']!==''?$res['curl_error']:($res['body']!==''?$res['body']:$res['message']);
   $status=$res['ok']?'sent_to_store':'failed_sync';
-  $msg=$res['ok']?'Transfer dikirim ke toko dan menunggu konfirmasi penerimaan manager toko.':'Penjualan/transfer ke toko dibuat tetapi gagal sync. '.$res['message'];
+  $msg=$res['ok']?'Transfer dikirim ke toko dan menunggu konfirmasi penerimaan manager cabang.':'Penjualan/transfer ke toko dibuat tetapi gagal sync. '.$res['message'];
   if($res['remote_status']==='pending_confirmation') $msg='Transfer dikirim ke toko. Status toko: pending konfirmasi manager.';
   if($res['remote_status']==='duplicate') $msg='Transfer sudah pernah diterima di toko. Tidak dibuat ganda.';
   execq('UPDATE kitchen_sales_headers SET status=?, synced_at=NOW(), remote_response=? WHERE id=?',[$status,$remoteText,$sid]);
