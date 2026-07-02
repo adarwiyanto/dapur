@@ -41,6 +41,8 @@ function ensure_api_pairing_schema(): void {
     last_message TEXT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+    notification_dismissed_at DATETIME NULL,
+    notification_dismissed_by BIGINT NULL,
     UNIQUE KEY uq_api_pairing_code (request_code),
     KEY idx_api_pairing_status (status),
     KEY idx_api_pairing_direction (direction)
@@ -80,7 +82,7 @@ function pairing_request_code(string $prefix='PAIR'): string { return $prefix.'-
 function pairing_secret(): string { return bin2hex(random_bytes(32)); }
 function pairing_scope_for(string $requesterType,string $targetType=''): string {
   $r=strtolower($requesterType); $t=strtolower($targetType);
-  if($r==='backoffice') return 'superadmin';
+  if($r==='backoffice') return 'admin_rw';
   if($r==='dapur') return 'dapur_stock_sender';
   if($r==='adena_store' || $r==='toko' || $r==='store') return 'store_product_readonly';
   if($r==='web_external' || $r==='external') return 'web_readonly';
@@ -88,6 +90,7 @@ function pairing_scope_for(string $requesterType,string $targetType=''): string 
 }
 function pairing_scope_allows(string $have,string $need): bool {
   if($have==='superadmin') return true;
+  if($have==='admin_rw' && in_array($need,['','readonly','products.read','stock.view','dashboard.read','employees.read','kpi.read','stock_transfer.write','admin_rw'],true)) return true;
   if($need==='' || $need==='readonly') return true;
   if($have===$need) return true;
   if($have==='dapur_stock_sender' && in_array($need,['products.read','stock_transfer.write','dapur_stock_sender'],true)) return true;

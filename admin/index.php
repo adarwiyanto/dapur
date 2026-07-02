@@ -1,17 +1,28 @@
 <?php
-require_once __DIR__.'/../core/auth.php'; require_login(); verify_csrf();
+require_once __DIR__.'/../core/auth.php'; require_once __DIR__.'/../core/api_pairing.php'; require_login(); verify_csrf();
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 ob_start(); // patch: keep AJAX JSON clean even when admin shell is buffered
 $u=current_user(); $page=$_GET['page']??'dashboard';
 $menus=[
- 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian','🛒','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
+ 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian','🛒','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
 ];
 if(!isset($menus[$page])) $page='dashboard'; require_perm($menus[$page][2]); if(($menus[$page][3]??'')==='owner' && !is_owner()){ http_response_code(403); die('Akses ditolak.'); }
 function h2($t){echo '<h2>'.e($t).'</h2>';}
 function next_no($prefix,$table,$field){return $prefix.'-'.date('Ymd').'-'.str_pad((string)(((int)(db()->query("SELECT COUNT(*) FROM $table")->fetchColumn()))+1),4,'0',STR_PAD_LEFT);} 
 function postval($k,$d=''){return trim((string)($_POST[$k]??$d));}
+
+function column_exists_local(string $table,string $column): bool { try{ $st=db()->prepare("SHOW COLUMNS FROM `$table` LIKE ?"); $st->execute([$column]); return (bool)$st->fetch(PDO::FETCH_ASSOC); }catch(Throwable $e){ return false; } }
+function ensure_pairing_notification_columns(): void {
+ try{ ensure_api_pairing_schema(); }catch(Throwable $e){}
+ if(table_exists('api_pairing_requests')){
+  try{ if(!column_exists_local('api_pairing_requests','notification_dismissed_at')) db()->exec("ALTER TABLE api_pairing_requests ADD COLUMN notification_dismissed_at DATETIME NULL"); }catch(Throwable $e){}
+  try{ if(!column_exists_local('api_pairing_requests','notification_dismissed_by')) db()->exec("ALTER TABLE api_pairing_requests ADD COLUMN notification_dismissed_by BIGINT NULL"); }catch(Throwable $e){}
+ }
+}
+function status_badge2($s){ $c=$s==='approved'||$s==='active'||$s==='ok'?'ok':($s==='pending'?'warn':'danger'); return '<span class="badge '.$c.'">'.e((string)$s).'</span>'; }
+function pairing_pending_rows(int $limit=6): array { ensure_pairing_notification_columns(); try{return all("SELECT * FROM api_pairing_requests WHERE direction='incoming' AND status='pending' AND notification_dismissed_at IS NULL ORDER BY id DESC LIMIT ".$limit);}catch(Throwable $e){return [];} }
 function role_key(): string { $u=current_user(); return (string)($u['role_key']??''); }
 function can_manage_finished_delete(): bool { return is_owner() || role_key()==='admin_dapur'; }
 function finished_product_ref_count(int $id): int {
@@ -122,8 +133,27 @@ function finish_store_test(bool $ok,string $message,array $extra=[]): void {
  flash($message,$ok?'ok':'err');
  redirect('?page=stores');
 }
+if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['act']??'')==='dismiss_pairing_notification'){ ensure_pairing_notification_columns(); $id=(int)($_POST['id']??0); if($id>0) execq("UPDATE api_pairing_requests SET notification_dismissed_at=NOW(), notification_dismissed_by=? WHERE id=? AND direction='incoming'",[ (int)($u['id']??0), $id]); flash('Notifikasi pairing dihapus dari bell.'); redirect('?page=api_integrations'); }
 $f=flash();
-?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css?v=20260623f"><script src="../assets/app.js?v=20260623f" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php foreach($menus as $k=>$m){ if(($m[3]??'')==='owner' && !is_owner()) continue; if(can($m[2])) echo '<a class="'.($page===$k?'active':'').'" href="?page='.e($k).'"><span>'.e($m[1]).'</span> '.e($m[0]).'</a>'; } ?><a href="../logout.php">⎋ Logout</a></nav></aside><main class="main"><div class="topbar"><div><strong><?=e($menus[$page][0])?></strong><div class="muted small">Login: <?=e($u['name']??'')?></div></div></div><?php if($f): ?><div class="notice <?=e($f[1])?>"><?=e($f[0])?></div><?php endif; ?><div class="card">
+$pairNotif=pairing_pending_rows(8); $pairNotifCount=count($pairNotif);
+?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css?v=20260702api"><script src="../assets/app.js?v=20260623f" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php
+$navGroups=[
+ ['label'=>'Utama','items'=>['dashboard','raw','purchases','production','stock','stock_opname','sales','remuneration']],
+ ['label'=>'Produk Jadi','items'=>['finished','finished_hidden']],
+ ['label'=>'BOM','items'=>['bom','bom_hidden']],
+ ['label'=>'Kegiatan Pegawai','items'=>['activities','activity_types']],
+ ['label'=>'Admin','items'=>['users','api_integrations','error_log','owner_permissions']],
+];
+foreach($navGroups as $grp){
+ $visible=[]; foreach($grp['items'] as $k){ if(!isset($menus[$k])) continue; $m=$menus[$k]; if(($m[3]??'')==='owner' && !is_owner()) continue; if(can($m[2])) $visible[]=$k; }
+ if(!$visible) continue;
+ $active=in_array($page,$visible,true); $main=$visible[0];
+ if(count($visible)===1){ $m=$menus[$main]; echo '<a class="'.($page===$main?'active':'').'" href="?page='.e($main).'"><span>'.e($m[1]).'</span> '.e($m[0]).'</a>'; continue; }
+ echo '<details class="nav-group" '.($active?'open':'').'><summary><span>▸</span> '.e($grp['label']).'</summary>';
+ foreach($visible as $k){ $m=$menus[$k]; echo '<a class="sub '.($page===$k?'active':'').'" href="?page='.e($k).'"><span>'.e($m[1]).'</span> '.e($m[0]).'</a>'; }
+ echo '</details>';
+}
+?><a href="../logout.php">⎋ Logout</a></nav></aside><main class="main"><div class="topbar"><div><strong><?=e($menus[$page][0])?></strong><div class="muted small">Login: <?=e($u['name']??'')?></div></div><div class="top-actions"><details class="notify"><summary>🔔<?php if($pairNotifCount>0): ?><span class="notif-badge"><?=e($pairNotifCount)?></span><?php endif; ?></summary><div class="notify-panel"><h4>Request Pairing API</h4><?php if($pairNotif): foreach($pairNotif as $pn): ?><div class="notify-item"><b><?=e($pn['requester_name']??'Peminta')?></b><br><small><?=e(($pn['requester_type']??'-').' • '.($pn['created_at']??''))?></small><div class="actions mini"><a class="btn light" href="?page=api_integrations">Lihat</a><form method="post" style="display:inline"><?=csrf_field()?><input type="hidden" name="act" value="dismiss_pairing_notification"><input type="hidden" name="id" value="<?=(int)$pn['id']?>"><button class="btn light" type="submit">Hapus</button></form></div></div><?php endforeach; else: ?><div class="muted small">Tidak ada request pairing baru.</div><?php endif; ?></div></details></div></div><?php if($f): ?><div class="notice <?=e($f[1])?>"><?=e($f[0])?></div><?php endif; ?><div class="card">
 <?php
 if($page==='dashboard'){
  h2('Dashboard Dapur'); $stats=[['Bahan baku',db()->query('SELECT COUNT(*) FROM raw_materials')->fetchColumn()],['Produk jadi',db()->query('SELECT COUNT(*) FROM finished_products')->fetchColumn()],['Produksi',db()->query('SELECT COUNT(*) FROM production_headers')->fetchColumn()],['Penjualan ke toko',db()->query('SELECT COUNT(*) FROM kitchen_sales_headers')->fetchColumn()],['Kegiatan pegawai',db()->query('SELECT COUNT(*) FROM employee_activities')->fetchColumn()]]; echo '<div class="grid">'; foreach($stats as $s) echo '<div class="card"><div class="muted">'.e($s[0]).'</div><div class="stat">'.e($s[1]).'</div></div>'; echo '</div>';
@@ -463,6 +493,7 @@ elseif($page==='activity_types'){
 elseif($page==='activities'){
  if($_SERVER['REQUEST_METHOD']==='POST'){
   if(($_POST['act']??'')==='emp'){execq('INSERT INTO employees(employee_name,phone,is_active) VALUES(?,?,1)',[postval('employee_name'),postval('phone')]); flash('Pegawai disimpan.'); redirect('?page=activities');}
+  if(($_POST['act']??'')==='delete_emp'){ $eid=(int)($_POST['employee_id']??0); if($eid>0){ execq('UPDATE employees SET is_active=0 WHERE id=?',[$eid]); flash('Pegawai dihapus dari daftar aktif.'); } redirect('?page=activities'); }
   if(($_POST['act']??'')==='type'){execq('INSERT INTO activity_types(activity_name,category,unit_name,point_weight,is_active) VALUES(?,?,?,?,1)',[postval('activity_name'),postval('category'),postval('unit_name','kegiatan'),(float)postval('point_weight','1')]); flash('Jenis kegiatan disimpan.'); redirect('?page=activity_types');}
   $at=one('SELECT * FROM activity_types WHERE id=? AND is_active=1',[(int)$_POST['activity_type_id']]);
   if(!$at){ flash('Jenis kegiatan tidak valid atau nonaktif.','err'); redirect('?page=activities'); }
@@ -473,6 +504,9 @@ elseif($page==='activities'){
  h2('Kegiatan Pegawai & Bobot Poin');
  echo '<h3>Tambah Pegawai</h3><form method="post" class="actions">'.csrf_field().'<input type="hidden" name="act" value="emp"><input name="employee_name" placeholder="Nama pegawai" required><input name="phone" placeholder="HP"><button class="btn light">Simpan Pegawai</button></form>';
  echo '<div class="actions"><a class="btn light" href="?page=activity_types">Daftar / Edit Kegiatan Pegawai</a></div>';
+ $ym=preg_match('/^\d{4}-\d{2}$/',(string)($_GET['month']??''))?$_GET['month']:date('Y-m'); $start=$ym.'-01'; $end=date('Y-m-t',strtotime($start));
+ echo '<h3>Total Poin Bulanan Pegawai</h3><form method="get" class="actions"><input type="hidden" name="page" value="activities"><label>Bulan<input type="month" name="month" value="'.e($ym).'"></label><button class="btn light">Filter</button></form>';
+ echo '<table><tr><th>Pegawai</th><th>Total Poin</th><th>Jumlah Aktivitas</th><th>Aksi</th></tr>'; foreach(all('SELECT e.id,e.employee_name,COALESCE(SUM(ea.total_points),0) total_points,COUNT(ea.id) activity_count FROM employees e LEFT JOIN employee_activities ea ON ea.employee_id=e.id AND ea.activity_date BETWEEN ? AND ? WHERE e.is_active=1 GROUP BY e.id,e.employee_name ORDER BY total_points DESC,e.employee_name',[$start,$end]) as $er){ echo '<tr><td>'.e($er['employee_name']).'</td><td>'.dec($er['total_points']).'</td><td>'.(int)$er['activity_count'].'</td><td><form method="post" onsubmit="return confirm(&quot;Hapus pegawai ini dari daftar aktif? Riwayat KPI tetap disimpan.&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete_emp"><input type="hidden" name="employee_id" value="'.(int)$er['id'].'"><button class="btn danger">Hapus</button></form></td></tr>'; } echo '</table>';
  echo '<h3>Input Kegiatan</h3><form method="post" class="form-grid">'.csrf_field().'<p><label>Tanggal<input name="activity_date" type="date" value="'.date('Y-m-d').'"></label></p><p><label>Pegawai<select name="employee_id">'; foreach(all('SELECT * FROM employees WHERE is_active=1 ORDER BY employee_name') as $emp) echo '<option value="'.(int)$emp['id'].'">'.e($emp['employee_name']).'</option>'; echo '</select></label></p><p><label>Kegiatan<select name="activity_type_id">'; foreach(all('SELECT * FROM activity_types WHERE is_active=1 ORDER BY activity_name') as $a) echo '<option value="'.(int)$a['id'].'">'.e($a['activity_name'].' ('.$a['point_weight'].')').'</option>'; echo '</select></label></p><p><label>Qty<input name="qty" type="number" step="0.0001" value="1"></label></p><p><label>Catatan<input name="notes"></label></p><p><button class="btn">Catat</button></p></form>';
  echo '<table><tr><th>Tanggal</th><th>Pegawai</th><th>Kegiatan</th><th>Poin</th></tr>'; foreach(all('SELECT ea.*,e.employee_name,a.activity_name FROM employee_activities ea JOIN employees e ON e.id=ea.employee_id JOIN activity_types a ON a.id=ea.activity_type_id ORDER BY ea.id DESC LIMIT 40') as $r) echo '<tr><td>'.e($r['activity_date']).'</td><td>'.e($r['employee_name']).'</td><td>'.e($r['activity_name']).'</td><td>'.dec($r['total_points']).'</td></tr>'; echo '</table>';
 }
@@ -530,6 +564,25 @@ elseif($page==='owner_permissions'){
   foreach(all('SELECT * FROM permissions ORDER BY id') as $p){ echo '<tr><td><input type="checkbox" name="permission_id[]" value="'.(int)$p['id'].'" '.(isset($active[(int)$p['id']])?'checked':'').'></td><td>'.e($p['permission_key']).'</td><td>'.e($p['permission_name']).'</td></tr>'; }
   echo '</table><p><button class="btn">Simpan Permission</button></p></form>';
  }
+}
+elseif($page==='api_integrations'){
+ ensure_pairing_notification_columns();
+ h2('API & Integrasi');
+ echo '<p class="muted">Semua koneksi API Dapur disatukan di sini: pairing Back Office, koneksi toko, token manual, request masuk/keluar, dan koneksi aktif.</p>';
+ echo '<div class="actions"><a class="btn light" href="?page=stores">Koneksi Toko</a><a class="btn light" href="?page=api">API Token Manual</a></div>';
+ $incoming=table_exists('api_pairing_requests')?all("SELECT * FROM api_pairing_requests WHERE direction='incoming' ORDER BY id DESC LIMIT 50"):[];
+ $outgoing=table_exists('api_pairing_requests')?all("SELECT * FROM api_pairing_requests WHERE direction='outgoing' ORDER BY id DESC LIMIT 50"):[];
+ $conns=table_exists('api_connections')?all("SELECT * FROM api_connections ORDER BY id DESC LIMIT 50"):[];
+ echo '<div class="grid"><div class="card"><h3>Kirim Request Pairing</h3><form method="post" action="api_pairing_action.php">'.csrf_field().'<input type="hidden" name="act" value="create_request"><label>Nama Koneksi<input name="connection_name" placeholder="Adena / Back Office" required></label><label>URL Tujuan<input name="base_url" placeholder="https://domain-tujuan.com" required></label><label>Jenis Tujuan<select name="target_type"><option value="adena_store">Toko Adena</option><option value="backoffice">Back Office</option><option value="dapur">Dapur</option></select></label><button class="btn">Kirim Request Pairing</button></form></div><div class="card"><h3>Aturan Akses</h3><ul><li>Pairing dari Back Office masuk sebagai akses admin operasional.</li><li>POS Desktop tidak diubah.</li><li>Request pending muncul di bell kanan atas.</li><li>Notifikasi dapat dihapus tanpa menghapus audit request.</li></ul></div></div>';
+ echo '<h3>Request Masuk</h3><table><tr><th>Waktu</th><th>Peminta</th><th>Jenis</th><th>URL</th><th>Scope</th><th>Status</th><th>Aksi</th></tr>';
+ foreach($incoming as $r){ echo '<tr><td>'.e($r['created_at']).'</td><td>'.e($r['requester_name']).'</td><td>'.e($r['requester_type']).'</td><td>'.e($r['requester_base_url']).'</td><td>'.e($r['requested_scope']).'</td><td>'.status_badge2($r['status']).'</td><td>'; if($r['status']==='pending'){ echo '<form method="post" action="api_pairing_action.php" style="display:inline">'.csrf_field().'<input type="hidden" name="act" value="approve"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn">Approve</button></form> <form method="post" action="api_pairing_action.php" style="display:inline">'.csrf_field().'<input type="hidden" name="act" value="reject"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn danger">Reject</button></form>'; } else echo '-'; echo '</td></tr>'; }
+ if(!$incoming) echo '<tr><td colspan="7" class="muted">Belum ada request masuk.</td></tr>'; echo '</table>';
+ echo '<h3>Request Keluar</h3><table><tr><th>Waktu</th><th>Tujuan</th><th>URL</th><th>Scope</th><th>Status</th><th>Aksi</th></tr>';
+ foreach($outgoing as $r){ echo '<tr><td>'.e($r['created_at']).'</td><td>'.e($r['target_name']).'</td><td>'.e($r['target_base_url']).'</td><td>'.e($r['requested_scope']).'</td><td>'.status_badge2($r['status']).'</td><td><form method="post" action="api_pairing_action.php">'.csrf_field().'<input type="hidden" name="act" value="check_status"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Cek Status</button></form></td></tr>'; }
+ if(!$outgoing) echo '<tr><td colspan="6" class="muted">Belum ada request keluar.</td></tr>'; echo '</table>';
+ echo '<h3>Koneksi Aktif</h3><table><tr><th>Nama</th><th>Jenis</th><th>URL Remote</th><th>Scope</th><th>Status</th><th>Test</th></tr>';
+ foreach($conns as $c){ echo '<tr><td>'.e($c['connection_name']).'</td><td>'.e($c['connection_type']).'</td><td>'.e($c['remote_base_url']).'</td><td>'.e($c['access_scope']).'</td><td>'.status_badge2($c['status']).'<br><small>'.e($c['last_test_message']??'').'</small></td><td>'; if(!empty($c['token_plain'])) echo '<form method="post" action="api_pairing_action.php">'.csrf_field().'<input type="hidden" name="act" value="test_connection"><input type="hidden" name="id" value="'.(int)$c['id'].'"><button class="btn light">Test</button></form>'; else echo 'Koneksi masuk'; echo '</td></tr>'; }
+ if(!$conns) echo '<tr><td colspan="6" class="muted">Belum ada koneksi aktif.</td></tr>'; echo '</table>';
 }
 elseif($page==='api'){
  if($_SERVER['REQUEST_METHOD']==='POST'){ $plain='kd_'.bin2hex(random_bytes(24)); execq('INSERT INTO api_tokens(token_name,token_hash,permissions_json,is_active) VALUES(?,?,?,1)',[postval('token_name'),hash('sha256',$plain),json_encode(['products.view','stock.view','*'])]); flash('Token dibuat. Simpan token ini sekarang: '.$plain); redirect('?page=api'); }

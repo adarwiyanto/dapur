@@ -6,16 +6,16 @@ require_once __DIR__ . '/../core/api_pairing.php';
 require_login(); ensure_api_pairing_schema();
 if(function_exists('verify_csrf')) verify_csrf();
 $me=current_user(); $uid=(int)($me['id']??0); $act=$_POST['act']??'';
-function go_pair($m=''){ header('Location: api_pairing.php'.($m?'?msg='.urlencode($m):'')); exit; }
+function go_pair($m=''){ header('Location: index.php?page=api_integrations'.($m?'&msg='.urlencode($m):'')); exit; }
 try{
  if($act==='create_request'){
    $name=trim((string)($_POST['connection_name']??'Koneksi Baru')); $url=pairing_normalize_url((string)($_POST['base_url']??'')); $target=trim((string)($_POST['target_type']??'adena_store'));
    if($url==='') throw new RuntimeException('URL tujuan wajib diisi.');
-   $secret=pairing_secret(); $code=pairing_request_code('ADENA'); $scope=pairing_scope_for('adena_store',$target);
-   $payload=['request_code'=>$code,'request_secret_hash'=>password_hash($secret,PASSWORD_DEFAULT),'requester_name'=>(app_config()['app']['name'] ?? 'Dapur'),'requester_type'=>'adena_store','requester_base_url'=>app_config()['app']['base_url']??'','target_type'=>$target,'callback_url'=>''];
+   $secret=pairing_secret(); $code=pairing_request_code('ADENA'); $scope=pairing_scope_for('dapur',$target);
+   $payload=['request_code'=>$code,'request_secret_hash'=>password_hash($secret,PASSWORD_DEFAULT),'requester_name'=>(app_config()['app']['name'] ?? 'Dapur'),'requester_type'=>'dapur','requester_base_url'=>app_config()['app']['base_url']??'','target_type'=>$target,'callback_url'=>''];
    $res=pairing_remote_json($url,'api/pairing/request.php',$payload,'POST');
    db()->prepare("INSERT INTO api_pairing_requests(direction,request_code,request_secret_hash,requester_name,requester_type,requester_base_url,target_name,target_type,target_base_url,requested_scope,status,last_message,created_at) VALUES('outgoing',?,?,?,?,?,?,?,?,?,?,?,NOW())")
-     ->execute([$code,password_hash($secret,PASSWORD_DEFAULT),$payload['requester_name'],'adena_store',(string)$payload['requester_base_url'],$name,$target,$url,$scope,!empty($res['ok'])?'pending':'failed',(string)($res['message']??$res['_error']??'')]);
+     ->execute([$code,password_hash($secret,PASSWORD_DEFAULT),$payload['requester_name'],'dapur',(string)$payload['requester_base_url'],$name,$target,$url,$scope,!empty($res['ok'])?'pending':'failed',(string)($res['message']??$res['_error']??'')]);
    // simpan secret plain lokal terenkripsi sederhana via token_plain field koneksi belum dibuat; untuk polling simpan di access_token_plain request lokal.
    db()->prepare('UPDATE api_pairing_requests SET access_token_plain=? WHERE request_code=?')->execute([$secret,$code]);
    go_pair(!empty($res['ok'])?'Request pairing terkirim.':'Request gagal: '.($res['message']??'error'));
