@@ -12,6 +12,27 @@ if(!isset($menus[$page])) $page='dashboard'; require_perm($menus[$page][2]); if(
 function h2($t){echo '<h2>'.e($t).'</h2>';}
 function next_no($prefix,$table,$field){return $prefix.'-'.date('Ymd').'-'.str_pad((string)(((int)(db()->query("SELECT COUNT(*) FROM $table")->fetchColumn()))+1),4,'0',STR_PAD_LEFT);} 
 function postval($k,$d=''){return trim((string)($_POST[$k]??$d));}
+function dapur_role_label(string $roleKey): string {
+ $roleKey=strtolower(trim($roleKey));
+ return match($roleKey){
+  'owner'=>'Owner',
+  'admin_dapur'=>'Admin Dapur',
+  'manager_dapur','kepala_dapur'=>'Manajer Dapur',
+  default=>'Pegawai Dapur',
+ };
+}
+function ensure_dapur_employee_role_column(): void {
+ try{ if(table_exists('employees') && !column_exists_local('employees','role_key')) db()->exec("ALTER TABLE employees ADD COLUMN role_key VARCHAR(50) NOT NULL DEFAULT 'pegawai_dapur' AFTER phone"); }catch(Throwable $e){}
+}
+function normalize_dapur_roles_runtime(): void {
+ try{
+  execq("INSERT IGNORE INTO roles(role_key,role_name) VALUES ('owner','Owner'),('admin_dapur','Admin Dapur'),('manager_dapur','Manajer Dapur'),('pegawai_dapur','Pegawai Dapur')");
+  execq("UPDATE roles SET role_name='Owner' WHERE role_key='owner'");
+  execq("UPDATE roles SET role_name='Admin Dapur' WHERE role_key='admin_dapur'");
+  execq("UPDATE roles SET role_name='Manajer Dapur' WHERE role_key IN ('manager_dapur','kepala_dapur')");
+  execq("UPDATE roles SET role_name='Pegawai Dapur' WHERE role_key IN ('pegawai_dapur','kasir_dapur','viewer')");
+ }catch(Throwable $e){}
+}
 
 function column_exists_local(string $table,string $column): bool { try{ $st=db()->prepare("SHOW COLUMNS FROM `$table` LIKE ?"); $st->execute([$column]); return (bool)$st->fetch(PDO::FETCH_ASSOC); }catch(Throwable $e){ return false; } }
 function ensure_pairing_notification_columns(): void {
@@ -135,6 +156,8 @@ function finish_store_test(bool $ok,string $message,array $extra=[]): void {
 }
 if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['act']??'')==='dismiss_pairing_notification'){ ensure_pairing_notification_columns(); $id=(int)($_POST['id']??0); if($id>0) execq("UPDATE api_pairing_requests SET notification_dismissed_at=NOW(), notification_dismissed_by=? WHERE id=? AND direction='incoming'",[ (int)($u['id']??0), $id]); flash('Notifikasi pairing dihapus dari bell.'); redirect('?page=api_integrations'); }
 $f=flash();
+normalize_dapur_roles_runtime();
+ensure_dapur_employee_role_column();
 $pairNotif=pairing_pending_rows(8); $pairNotifCount=count($pairNotif);
 ?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css?v=20260702api"><script src="../assets/app.js?v=20260623f" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php
 $navGroups=[
@@ -163,13 +186,20 @@ elseif($page==='stores'){
   $act=$_POST['act']??'';
   if($act==='save'){
    $id=(int)($_POST['id']??0);
-   $params=[postval('store_code'),postval('store_name'),postval('api_base_url'),postval('api_token'),isset($_POST['is_active'])?1:0,postval('notes')];
+   $tokenInput=postval('api_token');
+   $params=[postval('store_code'),postval('store_name'),postval('api_base_url'),isset($_POST['is_active'])?1:0,postval('notes')];
    if($id>0){
-    $params[]=$id;
-    execq('UPDATE stores SET store_code=?,store_name=?,api_base_url=?,api_token=?,is_active=?,notes=? WHERE id=?',$params);
+    if($tokenInput!==''){
+     $paramsWithToken=[postval('store_code'),postval('store_name'),postval('api_base_url'),$tokenInput,isset($_POST['is_active'])?1:0,postval('notes'),$id];
+     execq('UPDATE stores SET store_code=?,store_name=?,api_base_url=?,api_token=?,is_active=?,notes=? WHERE id=?',$paramsWithToken);
+    }else{
+     $params[]=$id;
+     execq('UPDATE stores SET store_code=?,store_name=?,api_base_url=?,is_active=?,notes=? WHERE id=?',$params);
+    }
     flash('Toko/API diperbarui.');
    }else{
-    execq('INSERT INTO stores(store_code,store_name,api_base_url,api_token,is_active,notes) VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE store_name=VALUES(store_name),api_base_url=VALUES(api_base_url),api_token=VALUES(api_token),is_active=VALUES(is_active),notes=VALUES(notes)',$params);
+    $paramsWithToken=[postval('store_code'),postval('store_name'),postval('api_base_url'),$tokenInput,isset($_POST['is_active'])?1:0,postval('notes')];
+    execq('INSERT INTO stores(store_code,store_name,api_base_url,api_token,is_active,notes) VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE store_name=VALUES(store_name),api_base_url=VALUES(api_base_url),api_token=IF(VALUES(api_token)<>"",VALUES(api_token),api_token),is_active=VALUES(is_active),notes=VALUES(notes)',$paramsWithToken);
     flash('Toko/API disimpan.');
    }
    redirect('?page=stores');
@@ -251,7 +281,7 @@ elseif($page==='stores'){
  $editId=(int)($_GET['edit']??0);
  $edit=$editId>0?one('SELECT * FROM stores WHERE id=?',[$editId]):null;
  h2('Multi Toko / Setting API');
- echo '<form method="post" class="form-grid compact-form store-form">'.csrf_field().'<input type="hidden" name="act" value="save"><input type="hidden" name="id" value="'.(int)($edit['id']??0).'"><p><label>Kode Toko<input name="store_code" value="'.e($edit['store_code']??'').'" required></label></p><p><label>Nama Toko<input name="store_name" value="'.e($edit['store_name']??'').'" required></label></p><p><label>Base URL API Toko<input name="api_base_url" value="'.e($edit['api_base_url']??'').'" placeholder="https://toko.adena.co.id" required></label></p><p><label>Token API Toko<input name="api_token" value="'.e($edit['api_token']??'').'"></label></p><p><label>Catatan<input name="notes" value="'.e($edit['notes']??'').'"></label></p><p><label class="check-inline"><input type="checkbox" name="is_active" '.((!$edit||!empty($edit['is_active']))?'checked':'').' > Aktif</label></p><p class="actions store-save-actions"><button class="btn">'.($edit?'Update':'Simpan').'</button>'.($edit?' <a class="btn light" href="?page=stores">Batal</a>':'').'</p></form>';
+ echo '<form method="post" class="form-grid compact-form store-form">'.csrf_field().'<input type="hidden" name="act" value="save"><input type="hidden" name="id" value="'.(int)($edit['id']??0).'"><p><label>Kode Toko<input name="store_code" value="'.e($edit['store_code']??'').'" required></label></p><p><label>Nama Toko<input name="store_name" value="'.e($edit['store_name']??'').'" required></label></p><p><label>Base URL API Toko<input name="api_base_url" value="'.e($edit['api_base_url']??'').'" placeholder="https://toko.adena.co.id" required></label></p><p><label>Token API Toko<input name="api_token" value="" placeholder="Kosongkan jika tidak diganti" autocomplete="off"></label></p><p><label>Catatan<input name="notes" value="'.e($edit['notes']??'').'"></label></p><p><label class="check-inline"><input type="checkbox" name="is_active" '.((!$edit||!empty($edit['is_active']))?'checked':'').' > Aktif</label></p><p class="actions store-save-actions"><button class="btn">'.($edit?'Update':'Simpan').'</button>'.($edit?' <a class="btn light" href="?page=stores">Batal</a>':'').'</p></form>';
  echo '<div id="store-api-status" class="store-api-status" hidden></div>';
  echo '<div class="table-scroll"><table class="compact-table stores-table"><tr><th>Kode</th><th>Nama</th><th>API</th><th>Status</th><th>Aksi</th></tr>'; foreach(all('SELECT * FROM stores ORDER BY store_name') as $r){echo '<tr><td>'.e($r['store_code']).'</td><td>'.e($r['store_name']).'</td><td class="api-url-cell">'.e($r['api_base_url']).'</td><td>'.($r['is_active']?'Aktif':'Nonaktif').'</td><td><div class="actions"><form method="post" data-store-api-test="1">'.csrf_field().'<input type="hidden" name="act" value="test_ping"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light" data-loading-text="Ping...">Ping</button></form><form method="post" data-store-api-test="1">'.csrf_field().'<input type="hidden" name="act" value="test_products"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light" data-loading-text="Test...">Test Produk</button></form><form method="post" data-store-api-test="1">'.csrf_field().'<input type="hidden" name="act" value="test_transfer"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light" data-loading-text="Test...">Test Transfer</button></form><a class="btn light" href="?page=stores&edit='.(int)$r['id'].'">Edit</a><form method="post" onsubmit="return confirm(&quot;Hapus/nonaktifkan toko ini?&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn danger">Hapus</button></form></div></td></tr>'; } echo '</table></div>';
 }
@@ -492,7 +522,7 @@ elseif($page==='activity_types'){
 }
 elseif($page==='activities'){
  if($_SERVER['REQUEST_METHOD']==='POST'){
-  if(($_POST['act']??'')==='emp'){execq('INSERT INTO employees(employee_name,phone,is_active) VALUES(?,?,1)',[postval('employee_name'),postval('phone')]); flash('Pegawai disimpan.'); redirect('?page=activities');}
+  if(($_POST['act']??'')==='emp'){ ensure_dapur_employee_role_column(); $rk=postval('role_key','pegawai_dapur'); if(!in_array($rk,['owner','admin_dapur','manager_dapur','pegawai_dapur'],true)) $rk='pegawai_dapur'; execq('INSERT INTO employees(employee_name,phone,role_key,is_active) VALUES(?,?,?,1)',[postval('employee_name'),postval('phone'),$rk]); flash('Pegawai disimpan.'); redirect('?page=activities');}
   if(($_POST['act']??'')==='delete_emp'){ $eid=(int)($_POST['employee_id']??0); if($eid>0){ execq('UPDATE employees SET is_active=0 WHERE id=?',[$eid]); flash('Pegawai dihapus dari daftar aktif.'); } redirect('?page=activities'); }
   if(($_POST['act']??'')==='type'){execq('INSERT INTO activity_types(activity_name,category,unit_name,point_weight,is_active) VALUES(?,?,?,?,1)',[postval('activity_name'),postval('category'),postval('unit_name','kegiatan'),(float)postval('point_weight','1')]); flash('Jenis kegiatan disimpan.'); redirect('?page=activity_types');}
   $at=one('SELECT * FROM activity_types WHERE id=? AND is_active=1',[(int)$_POST['activity_type_id']]);
@@ -502,11 +532,11 @@ elseif($page==='activities'){
   flash('Kegiatan pegawai dicatat.'); redirect('?page=activities');
  }
  h2('Kegiatan Pegawai & Bobot Poin');
- echo '<h3>Tambah Pegawai</h3><form method="post" class="actions">'.csrf_field().'<input type="hidden" name="act" value="emp"><input name="employee_name" placeholder="Nama pegawai" required><input name="phone" placeholder="HP"><button class="btn light">Simpan Pegawai</button></form>';
+ echo '<h3>Tambah Pegawai</h3><form method="post" class="actions">'.csrf_field().'<input type="hidden" name="act" value="emp"><input name="employee_name" placeholder="Nama pegawai" required><input name="phone" placeholder="HP"><select name="role_key"><option value="pegawai_dapur">Pegawai Dapur</option><option value="manager_dapur">Manajer Dapur</option><option value="admin_dapur">Admin Dapur</option><option value="owner">Owner</option></select><button class="btn light">Simpan Pegawai</button></form>';
  echo '<div class="actions"><a class="btn light" href="?page=activity_types">Daftar / Edit Kegiatan Pegawai</a></div>';
  $ym=preg_match('/^\d{4}-\d{2}$/',(string)($_GET['month']??''))?$_GET['month']:date('Y-m'); $start=$ym.'-01'; $end=date('Y-m-t',strtotime($start));
  echo '<h3>Total Poin Bulanan Pegawai</h3><form method="get" class="actions"><input type="hidden" name="page" value="activities"><label>Bulan<input type="month" name="month" value="'.e($ym).'"></label><button class="btn light">Filter</button></form>';
- echo '<table><tr><th>Pegawai</th><th>Total Poin</th><th>Jumlah Aktivitas</th><th>Aksi</th></tr>'; foreach(all('SELECT e.id,e.employee_name,COALESCE(SUM(ea.total_points),0) total_points,COUNT(ea.id) activity_count FROM employees e LEFT JOIN employee_activities ea ON ea.employee_id=e.id AND ea.activity_date BETWEEN ? AND ? WHERE e.is_active=1 GROUP BY e.id,e.employee_name ORDER BY total_points DESC,e.employee_name',[$start,$end]) as $er){ echo '<tr><td>'.e($er['employee_name']).'</td><td>'.dec($er['total_points']).'</td><td>'.(int)$er['activity_count'].'</td><td><form method="post" onsubmit="return confirm(&quot;Hapus pegawai ini dari daftar aktif? Riwayat KPI tetap disimpan.&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete_emp"><input type="hidden" name="employee_id" value="'.(int)$er['id'].'"><button class="btn danger">Hapus</button></form></td></tr>'; } echo '</table>';
+ echo '<table><tr><th>Pegawai</th><th>Role</th><th>Total Poin</th><th>Jumlah Aktivitas</th><th>Aksi</th></tr>'; foreach(all('SELECT e.id,e.employee_name,COALESCE(e.role_key,\'pegawai_dapur\') role_key,COALESCE(SUM(ea.total_points),0) total_points,COUNT(ea.id) activity_count FROM employees e LEFT JOIN employee_activities ea ON ea.employee_id=e.id AND ea.activity_date BETWEEN ? AND ? WHERE e.is_active=1 GROUP BY e.id,e.employee_name,e.role_key ORDER BY total_points DESC,e.employee_name',[$start,$end]) as $er){ echo '<tr><td>'.e($er['employee_name']).'</td><td>'.e(dapur_role_label((string)($er['role_key']??'pegawai_dapur'))).'</td><td>'.dec($er['total_points']).'</td><td>'.(int)$er['activity_count'].'</td><td><form method="post" onsubmit="return confirm(&quot;Hapus pegawai ini dari daftar aktif? Riwayat KPI tetap disimpan.&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete_emp"><input type="hidden" name="employee_id" value="'.(int)$er['id'].'"><button class="btn danger">Hapus</button></form></td></tr>'; } echo '</table>';
  echo '<h3>Input Kegiatan</h3><form method="post" class="form-grid">'.csrf_field().'<p><label>Tanggal<input name="activity_date" type="date" value="'.date('Y-m-d').'"></label></p><p><label>Pegawai<select name="employee_id">'; foreach(all('SELECT * FROM employees WHERE is_active=1 ORDER BY employee_name') as $emp) echo '<option value="'.(int)$emp['id'].'">'.e($emp['employee_name']).'</option>'; echo '</select></label></p><p><label>Kegiatan<select name="activity_type_id">'; foreach(all('SELECT * FROM activity_types WHERE is_active=1 ORDER BY activity_name') as $a) echo '<option value="'.(int)$a['id'].'">'.e($a['activity_name'].' ('.$a['point_weight'].')').'</option>'; echo '</select></label></p><p><label>Qty<input name="qty" type="number" step="0.0001" value="1"></label></p><p><label>Catatan<input name="notes"></label></p><p><button class="btn">Catat</button></p></form>';
  echo '<table><tr><th>Tanggal</th><th>Pegawai</th><th>Kegiatan</th><th>Poin</th></tr>'; foreach(all('SELECT ea.*,e.employee_name,a.activity_name FROM employee_activities ea JOIN employees e ON e.id=ea.employee_id JOIN activity_types a ON a.id=ea.activity_type_id ORDER BY ea.id DESC LIMIT 40') as $r) echo '<tr><td>'.e($r['activity_date']).'</td><td>'.e($r['employee_name']).'</td><td>'.e($r['activity_name']).'</td><td>'.dec($r['total_points']).'</td></tr>'; echo '</table>';
 }
@@ -516,7 +546,7 @@ elseif($page==='remuneration'){
 }
 elseif($page==='users'){
  if($_SERVER['REQUEST_METHOD']==='POST'){ $hash=password_hash(postval('password'),PASSWORD_DEFAULT); execq('INSERT INTO users(username,name,email,password_hash,role_id,is_active) VALUES(?,?,?,?,?,1)',[postval('username'),postval('name'),postval('email'),$hash,(int)$_POST['role_id']]); flash('User dibuat.'); redirect('?page=users'); }
- h2('User & Role'); echo '<form method="post" class="form-grid">'.csrf_field().'<p><label>Username<input name="username" required></label></p><p><label>Nama<input name="name" required></label></p><p><label>Email<input name="email"></label></p><p><label>Password<input name="password" type="password" required></label></p><p><label>Role<select name="role_id">'; foreach(all('SELECT * FROM roles ORDER BY id') as $r) echo '<option value="'.(int)$r['id'].'">'.e($r['role_name']).'</option>'; echo '</select></label></p><p><button class="btn">Buat User</button></p></form><table><tr><th>Username</th><th>Nama</th><th>Role</th></tr>'; foreach(all('SELECT u.*,r.role_name FROM users u JOIN roles r ON r.id=u.role_id ORDER BY u.id') as $r) echo '<tr><td>'.e($r['username']).'</td><td>'.e($r['name']).'</td><td>'.e($r['role_name']).'</td></tr>'; echo '</table>';
+ h2('User & Role'); echo '<form method="post" class="form-grid">'.csrf_field().'<p><label>Username<input name="username" required></label></p><p><label>Nama<input name="name" required></label></p><p><label>Email<input name="email"></label></p><p><label>Password<input name="password" type="password" required></label></p><p><label>Role<select name="role_id">'; foreach(all("SELECT * FROM roles WHERE role_key NOT IN ('superadmin','kepala_dapur','kasir_dapur','viewer') ORDER BY FIELD(role_key,'owner','admin_dapur','manager_dapur','pegawai_dapur'), id") as $r) echo '<option value="'.(int)$r['id'].'">'.e(dapur_role_label((string)$r['role_key'])).'</option>'; echo '</select></label></p><p><button class="btn">Buat User</button></p></form><table><tr><th>Username</th><th>Nama</th><th>Role</th></tr>'; foreach(all('SELECT u.*,r.role_key,r.role_name FROM users u JOIN roles r ON r.id=u.role_id ORDER BY u.id') as $r) echo '<tr><td>'.e($r['username']).'</td><td>'.e($r['name']).'</td><td>'.e(dapur_role_label((string)$r['role_key'])).'</td></tr>'; echo '</table>';
 }
 
 elseif($page==='error_log'){
@@ -552,7 +582,7 @@ elseif($page==='owner_permissions'){
   flash('Permission role '.($role['role_name']??'').' diperbarui.'); redirect('?page=owner_permissions&role_id='.$roleId);
  }
  h2('Pengaturan User Permission');
- $roles=all("SELECT * FROM roles WHERE role_key NOT IN ('owner','superadmin') ORDER BY id");
+ $roles=all("SELECT * FROM roles WHERE role_key NOT IN ('owner','superadmin','kepala_dapur','kasir_dapur','viewer') ORDER BY FIELD(role_key,'admin_dapur','manager_dapur','pegawai_dapur'), id");
  $roleId=(int)($_GET['role_id']??($roles[0]['id']??0));
  $selectedRole=$roleId>0?one('SELECT * FROM roles WHERE id=?',[$roleId]):null;
  if(!$selectedRole || in_array((string)$selectedRole['role_key'],['owner','superadmin'],true)){ $selectedRole=$roles[0]??null; $roleId=(int)($selectedRole['id']??0); }
@@ -581,7 +611,7 @@ elseif($page==='api_integrations'){
  foreach($outgoing as $r){ echo '<tr><td>'.e($r['created_at']).'</td><td>'.e($r['target_name']).'</td><td>'.e($r['target_base_url']).'</td><td>'.e($r['requested_scope']).'</td><td>'.status_badge2($r['status']).'</td><td><form method="post" action="api_pairing_action.php">'.csrf_field().'<input type="hidden" name="act" value="check_status"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Cek Status</button></form></td></tr>'; }
  if(!$outgoing) echo '<tr><td colspan="6" class="muted">Belum ada request keluar.</td></tr>'; echo '</table>';
  echo '<h3>Koneksi Aktif</h3><table><tr><th>Nama</th><th>Jenis</th><th>URL Remote</th><th>Scope</th><th>Status</th><th>Test</th></tr>';
- foreach($conns as $c){ echo '<tr><td>'.e($c['connection_name']).'</td><td>'.e($c['connection_type']).'</td><td>'.e($c['remote_base_url']).'</td><td>'.e($c['access_scope']).'</td><td>'.status_badge2($c['status']).'<br><small>'.e($c['last_test_message']??'').'</small></td><td>'; if(!empty($c['token_plain'])) echo '<form method="post" action="api_pairing_action.php">'.csrf_field().'<input type="hidden" name="act" value="test_connection"><input type="hidden" name="id" value="'.(int)$c['id'].'"><button class="btn light">Test</button></form>'; else echo 'Koneksi masuk'; echo '</td></tr>'; }
+ foreach($conns as $c){ echo '<tr><td>'.e($c['connection_name']).'</td><td>'.e($c['connection_type']).'</td><td>'.e($c['remote_base_url']).'</td><td>'.e($c['access_scope']).'</td><td>'.status_badge2($c['status']).'<br><small>'.e($c['last_test_message']??'').'</small></td><td>'; echo '<form method="post" action="api_pairing_action.php">'.csrf_field().'<input type="hidden" name="act" value="test_connection"><input type="hidden" name="id" value="'.(int)$c['id'].'"><button class="btn light">Test</button></form>'; echo '</td></tr>'; }
  if(!$conns) echo '<tr><td colspan="6" class="muted">Belum ada koneksi aktif.</td></tr>'; echo '</table>';
 }
 elseif($page==='api'){
