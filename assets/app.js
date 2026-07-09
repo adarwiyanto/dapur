@@ -17,6 +17,8 @@ document.addEventListener('submit', async e => {
   const pct = box ? box.querySelector('[data-import-percent]') : null;
   const status = box ? box.querySelector('[data-import-status]') : null;
   const button = form.querySelector('button[type="submit"],button:not([type])');
+  const sourceType = (form.querySelector('[name="source_type"]') || {}).value || 'store';
+  const sourceLabel = sourceType === 'hope' ? 'HOPe/HP' : 'toko';
   let progress = 8;
   let timer = null;
 
@@ -29,7 +31,7 @@ document.addEventListener('submit', async e => {
   };
 
   if (bar) bar.classList.remove('is-error');
-  setProgress(8, 'Menghubungi API toko...');
+  setProgress(8, 'Menghubungi API ' + sourceLabel + '...');
   if (button) {
     button.disabled = true;
     button.dataset.originalText = button.textContent;
@@ -37,7 +39,7 @@ document.addEventListener('submit', async e => {
   }
 
   timer = window.setInterval(() => {
-    if (progress < 35) setProgress(progress + 7, 'Membaca daftar produk dari toko...');
+    if (progress < 35) setProgress(progress + 7, 'Membaca daftar produk dari ' + sourceLabel + '...');
     else if (progress < 70) setProgress(progress + 4, 'Menyimpan produk ke dapur...');
     else if (progress < 92) setProgress(progress + 1, 'Finalisasi mapping produk...');
   }, 350);
@@ -187,6 +189,23 @@ document.addEventListener('submit', async e => {
   if (!modal) return;
 
   const firstField = modal.querySelector('select, input, button');
+  const sourceType = modal.querySelector('[data-import-source-type]');
+  const storeField = modal.querySelector('[data-import-store-field]');
+  const hopeField = modal.querySelector('[data-import-hope-field]');
+  const storeSelect = modal.querySelector('[name="store_id"]');
+  const hopeSelect = modal.querySelector('[name="connection_id"]');
+  if (sourceType && sourceType.value === 'store' && storeSelect && !storeSelect.value && hopeSelect && hopeSelect.value) {
+    sourceType.value = 'hope';
+  }
+  const syncSourceFields = () => {
+    const isHope = sourceType && sourceType.value === 'hope';
+    if (storeField) storeField.hidden = !!isHope;
+    if (hopeField) hopeField.hidden = !isHope;
+  };
+  if (sourceType) {
+    sourceType.addEventListener('change', syncSourceFields);
+    syncSourceFields();
+  }
   const openModal = () => {
     modal.hidden = false;
     document.body.classList.add('modal-open');

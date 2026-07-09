@@ -18,9 +18,12 @@ function dapur_store_call(array $store,string $path,array $payload=[],string $me
   $body=curl_exec($ch); $err=curl_error($ch); $code=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch); $json=is_string($body)?json_decode($body,true):null;
   return ['http_code'=>$code,'body'=>(string)$body,'curl_error'=>(string)$err,'json'=>is_array($json)?$json:null,'ok'=>($err==='' && $code>=200 && $code<300 && is_array($json) && !empty($json['ok']))];
 }
-function dapur_test_item(): array {
+function dapur_test_item(int $finishedProductId = 0): array {
+  if($finishedProductId>0){
+    try{ $r=one('SELECT id,code,sku,name,category,unit,transfer_price,source_product_id FROM finished_products WHERE id=? AND is_active=1 LIMIT 1',[$finishedProductId]); if($r) return ['store_product_id'=>(string)($r['source_product_id']?:$r['id']),'sku'=>(string)($r['sku']?:($r['code']?:'DAPUR-FP-'.(int)$r['id'])),'name'=>(string)$r['name'],'category'=>(string)($r['category']?:'Kiriman Dapur'),'item_type'=>'finished_good','qty'=>1,'unit'=>(string)($r['unit']?:'pcs'),'transfer_price'=>(float)($r['transfer_price']??0)]; }catch(Throwable $e){}
+  }
   try{ $r=one('SELECT id,name,unit,last_cost FROM raw_materials WHERE is_active=1 ORDER BY id LIMIT 1'); if($r) return ['sku'=>'DAPUR-RM-'.(int)$r['id'],'name'=>(string)$r['name'],'item_type'=>'raw_material','qty'=>1,'unit'=>(string)($r['unit']?:'pcs'),'transfer_price'=>(float)($r['last_cost']??0)]; }catch(Throwable $e){}
-  try{ $r=one('SELECT id,name,unit,transfer_price FROM finished_products WHERE is_active=1 ORDER BY id LIMIT 1'); if($r) return ['sku'=>'DAPUR-FP-'.(int)$r['id'],'name'=>(string)$r['name'],'item_type'=>'finished_good','qty'=>1,'unit'=>(string)($r['unit']?:'pcs'),'transfer_price'=>(float)($r['transfer_price']??0)]; }catch(Throwable $e){}
+  try{ $r=one('SELECT id,name,category,unit,transfer_price FROM finished_products WHERE is_active=1 ORDER BY id LIMIT 1'); if($r) return ['store_product_id'=>(string)$r['id'],'sku'=>'DAPUR-FP-'.(int)$r['id'],'name'=>(string)$r['name'],'category'=>(string)($r['category']?:'Kiriman Dapur'),'item_type'=>'finished_good','qty'=>1,'unit'=>(string)($r['unit']?:'pcs'),'transfer_price'=>(float)($r['transfer_price']??0)]; }catch(Throwable $e){}
   return ['sku'=>'DAPUR-DRYRUN','name'=>'Tes Barang Dry Run','item_type'=>'raw_material','qty'=>1,'unit'=>'pcs','transfer_price'=>0];
 }
 try{
@@ -77,12 +80,15 @@ try{
  if($act==='test_hope_transfer'){
    $id=(int)($_POST['id']??0); $st=db()->prepare("SELECT * FROM api_connections WHERE id=? AND status='active' LIMIT 1"); $st->execute([$id]); $c=$st->fetch(PDO::FETCH_ASSOC); if(!$c) throw new RuntimeException('Koneksi HOPe tidak ditemukan.');
    $token=dapur_remote_token($c); if($token==='') throw new RuntimeException('Token HOPe kosong. Cek status pairing dulu.');
-   $payload=['dry_run'=>true,'source'=>'DAPUR_ADENA','transfer_no'=>'DRYRUN-DAPUR-'.date('YmdHis').'-'.$id,'transfer_date'=>date('Y-m-d'),'items'=>[dapur_test_item()],'notes'=>'Dry-run test transfer stok Dapur ke HOPe. Tidak mengubah stok.'];
+   $productId=(int)($_POST['product_id']??0);
+   $testItem=dapur_test_item($productId);
+   $payload=['dry_run'=>true,'source'=>'DAPUR_ADENA','transfer_no'=>'DRYRUN-DAPUR-'.date('YmdHis').'-'.$id.($productId>0?'-FP'.$productId:''),'transfer_date'=>date('Y-m-d'),'items'=>[$testItem],'notes'=>'Dry-run test transfer stok Dapur ke HOPe/HP. Tidak mengubah stok.'];
    $res=pairing_remote_json($c['remote_base_url'],'api/v1/kitchen/receive-transfer.php',$payload,'POST',$token); $ok=!empty($res['ok']); $msg=(string)($res['message']??$res['_error']??'');
    db()->prepare('UPDATE api_connections SET last_test_at=NOW(),last_test_status=?,last_test_message=? WHERE id=?')->execute([$ok?'ok':'failed',$msg,$id]);
    pairing_test_log($id,(string)$c['remote_base_url'],'hope','api/v1/kitchen/receive-transfer.php',$ok?'ok':'failed',(int)($res['_http_code']??0),$msg,$res,$uid);
    pairing_log_event(null,'api/v1/kitchen/receive-transfer.php','out',$ok?'dryrun_transfer_ok':'dryrun_transfer_failed',$msg,['request'=>$payload,'response'=>$res]);
-   go_pair($ok?'Test transfer stok ke HOPe berhasil. Dry-run tidak mengubah stok.':'Test transfer stok ke HOPe gagal: '.$msg);
+   $testedName=(string)($testItem['name']??'item');
+   go_pair($ok?'Test transfer stok ke HOPe/HP berhasil untuk '.$testedName.'. Dry-run tidak mengubah stok.':'Test transfer stok ke HOPe/HP gagal untuk '.$testedName.': '.$msg);
  }
  if($act==='store_test_ping' || $act==='store_test_products' || $act==='store_test_transfer'){
    $id=(int)($_POST['id']??0); $s=one('SELECT * FROM stores WHERE id=?',[$id]); if(!$s) throw new RuntimeException('Toko/API tidak ditemukan.');

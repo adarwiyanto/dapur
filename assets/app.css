@@ -1150,3 +1150,17 @@ body{background:var(--bg)!important;color:var(--text)!important;font-family:var(
 .card{background:var(--surface)!important;border:1px solid var(--border)!important;border-radius:var(--radius)!important;box-shadow:var(--shadow)!important}.btn,button,.portal-switch-row button{background:var(--primary)!important;color:#fff!important;border:1px solid var(--primary)!important}.btn.secondary{background:var(--primary-2)!important;color:#fff!important;border-color:var(--primary-2)!important}.btn.light{background:#fff!important;color:var(--text)!important;border-color:var(--border)!important}.btn.danger{background:#dc2626!important;color:#fff!important;border-color:#dc2626!important}
 input,select,textarea{border-color:var(--border)!important;background:#fff!important;color:var(--text)!important}table{background:#fff!important;border-radius:12px!important}th{background:#f8fafc!important;color:#475569!important;border-bottom:1px solid var(--border)!important}td{border-bottom:1px solid var(--border)!important}.badge{background:#f8fafc!important;border:1px solid var(--border)!important;color:#334155!important}.code,.log-pre,.finished-edit-grid input[readonly]{background:#f8fafc!important;color:#334155!important;border-color:var(--border)!important}.modal-card{background:#fff!important;border-color:var(--border)!important}.modal-backdrop,.global-loading{background:rgba(15,23,42,.30)!important;color:var(--text)!important}.global-loading-card{background:#fff!important;border-color:var(--border)!important}.global-loading-spinner{border-color:#dbeafe!important;border-top-color:var(--primary)!important}.notify>summary{border-color:var(--border)!important;background:#fff!important;color:var(--text)!important}.notify-panel{border-color:var(--border)!important;background:#fff!important}.notif-badge{background:#dc2626!important;color:#fff!important;border:0!important}
 @media(max-width:980px){.app-shell{display:block}.app-shell>.sidebar{position:relative;width:100%!important;max-width:none!important;min-width:0!important;height:auto!important}.app-shell>.main{padding:12px!important}}
+
+/* Patch 20260709 - HOPe/HP import + per-product dry-run transfer */
+.mini-select{
+  max-width: 160px;
+  min-width: 120px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(15,23,42,.16);
+  background: #fff;
+  font-size: 13px;
+}
+.finished-products-table .actions form{
+  align-items: center;
+}
