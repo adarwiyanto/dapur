@@ -9,6 +9,25 @@ function go_pair($m=''){
   $page=preg_replace('/[^a-z0-9_]/i','', (string)($_POST['return_page']??'api_integrations')); if($page==='') $page='api_integrations';
   header('Location: index.php?page='.$page.($m?'&msg='.urlencode($m):'')); exit;
 }
+
+function dapur_api_type_key(array $c): string {
+  $raw=strtolower(trim((string)(($c['remote_system_type']??'').' '.($c['connection_type']??'').' '.($c['connection_name']??''))));
+  if(preg_match('/\b(hope|hp|hope_pos|pos)\b/',$raw) || str_contains($raw,'hope')) return 'hope';
+  if(str_contains($raw,'backoffice') || str_contains($raw,'back office') || preg_match('/\bbo\b/',$raw)) return 'backoffice';
+  if(str_contains($raw,'adena_store') || str_contains($raw,'store') || str_contains($raw,'toko') || str_contains($raw,'cabang')) return 'store';
+  if(str_contains($raw,'dapur')) return 'dapur';
+  return trim((string)($c['remote_system_type']??'')) ?: 'external';
+}
+function dapur_backoffice_endpoint_for(string $act): array {
+  return match($act){
+    'test_backoffice_health' => ['api/backoffice/health.php','GET','readonly','Test Health Back Office'],
+    'test_backoffice_dashboard' => ['api/backoffice/dashboard_summary.php','GET','readonly','Test Dashboard Summary Back Office'],
+    'test_backoffice_kpi' => ['api/backoffice/kpi_dapur.php','GET','readonly','Test KPI Dapur Back Office'],
+    'test_backoffice_employees' => ['api/backoffice/employees.php','GET','employees.read','Test Employees Back Office'],
+    default => ['','GET','readonly','Test Back Office'],
+  };
+}
+
 function dapur_remote_token(array $c): string { return (string)($c['token_plain'] ?? ($c['access_token_plain'] ?? '')); }
 function dapur_store_call(array $store,string $path,array $payload=[],string $method='POST'): array {
   $url=pairing_normalize_url((string)$store['api_base_url']).'/'.ltrim($path,'/');
@@ -95,7 +114,7 @@ try{
  if($act==='refresh_scope'){
    $id=(int)($_POST['id']??0); $st=db()->prepare("SELECT * FROM api_connections WHERE id=? AND status='active' LIMIT 1"); $st->execute([$id]); $c=$st->fetch(PDO::FETCH_ASSOC); if(!$c) throw new RuntimeException('Koneksi tidak ditemukan.');
    $token=dapur_remote_token($c); if($token==='') throw new RuntimeException('Token remote kosong.');
-   $desired=(($c['remote_system_type']??'')==='hope' || ($c['connection_type']??'')==='hope')?'dapur_stock_sender':'products.read';
+   $type=dapur_api_type_key($c); $desired=$type==='hope'?'dapur_stock_sender':($type==='backoffice'?'admin_rw':'products.read');
    $res=pairing_remote_json((string)$c['remote_base_url'],'api/pairing/refresh-scope.php',['desired_scope'=>$desired],'POST',$token,12);
    $ok=!empty($res['ok']); $newScope=(string)($res['access_scope']??$desired); $msg=(string)($res['message']??$res['_error']??'');
    if($ok){ db()->prepare('UPDATE api_connections SET access_scope=?, last_test_at=NOW(), last_test_status=?, last_test_message=?, updated_at=NOW() WHERE id=?')->execute([$newScope,'ok','Scope diperbarui: '.$newScope,$id]); }
@@ -118,6 +137,22 @@ try{
    $testedName=(string)($testItem['name']??'item');
    go_pair($ok?'Test transfer stok ke HOPe/HP berhasil untuk '.$testedName.'. Dry-run tidak mengubah stok.':'Test transfer stok ke HOPe/HP gagal untuk '.$testedName.': '.$msg);
  }
+
+ if(in_array($act,['test_backoffice_health','test_backoffice_dashboard','test_backoffice_kpi','test_backoffice_employees'],true)){
+   $id=(int)($_POST['id']??0); $st=db()->prepare("SELECT * FROM api_connections WHERE id=? AND status='active' LIMIT 1"); $st->execute([$id]); $c=$st->fetch(PDO::FETCH_ASSOC); if(!$c) throw new RuntimeException('Koneksi Back Office tidak ditemukan.');
+   [$endpoint,$method,$need,$label]=dapur_backoffice_endpoint_for($act); if($endpoint==='') throw new RuntimeException('Jenis test Back Office tidak dikenal.');
+   $token=dapur_remote_token($c); if($token==='') throw new RuntimeException('Token Back Office kosong. Cek status pairing dulu.');
+   if(!pairing_scope_allows((string)($c['access_scope']??''),$need)) throw new RuntimeException('Scope koneksi belum cukup untuk '.$label.'. Dibutuhkan '.$need.'. Scope saat ini: '.($c['access_scope']??''));
+   $payload=[]; if($act==='test_backoffice_kpi') $payload=['month'=>date('Y-m')];
+   $res=pairing_remote_json((string)$c['remote_base_url'],$endpoint,$payload,$method,$token,15);
+   $ok=!empty($res['ok']); $extra=''; if($ok){ if(isset($res['count'])) $extra=' Count: '.(int)$res['count'].'.'; elseif(is_array($res['data']??null)) $extra=' Response data OK.'; }
+   $msg=$ok?($label.' berhasil.'.$extra):(string)($res['message']??$res['_error']??($label.' gagal.'));
+   db()->prepare('UPDATE api_connections SET last_test_at=NOW(),last_test_status=?,last_test_message=? WHERE id=?')->execute([$ok?'ok':'failed',$msg,$id]);
+   pairing_test_log($id,(string)$c['remote_base_url'],'backoffice',$endpoint,$ok?'ok':'failed',(int)($res['_http_code']??0),$msg,$res,$uid);
+   pairing_log_event(null,$endpoint,'out',$ok?'backoffice_test_ok':'backoffice_test_failed',$msg,['connection_id'=>$id,'response'=>$res]);
+   go_pair($msg);
+ }
+
  if($act==='store_test_ping' || $act==='store_test_products' || $act==='store_test_transfer'){
    $id=(int)($_POST['id']??0); $s=one('SELECT * FROM stores WHERE id=?',[$id]); if(!$s) throw new RuntimeException('Toko/API tidak ditemukan.');
    $endpoint=$act==='store_test_ping'?'api/v1/kitchen/ping.php':($act==='store_test_products'?'api/v1/kitchen/products.php':'api/v1/kitchen/receive-transfer.php');
