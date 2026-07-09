@@ -66,6 +66,27 @@ function api_action_form(int $id,string $act,string $label,string $returnPage='a
  $ons=$confirm!==''?' onsubmit="return confirm(&quot;'.e($confirm).'&quot;)"':'';
  return '<form method="post" action="api_pairing_action.php"'.$ons.'>'.csrf_field().'<input type="hidden" name="return_page" value="'.e($returnPage).'"><input type="hidden" name="act" value="'.e($act).'"><input type="hidden" name="id" value="'.$id.'"><button class="'.e($class).'">'.e($label).'</button></form>';
 }
+function api_connection_test_actions(array $c,string $returnPage='api_integrations'): string {
+ $cid=(int)($c['id']??0); if($cid<=0) return '';
+ $type=api_ui_type_key($c);
+ $html='<div class="actions mini">';
+ $html.=api_action_form($cid,'test_connection','Test Ping',$returnPage);
+ if($type==='hope'){
+  $html.=api_action_form($cid,'test_hope_products','Test Produk',$returnPage);
+  $html.=api_action_form($cid,'test_hope_transfer','Test Transfer Stok',$returnPage);
+  $html.=api_action_form($cid,'refresh_scope','Refresh Scope',$returnPage);
+ } elseif($type==='backoffice'){
+  $html.=api_action_form($cid,'test_backoffice_health','Test Health',$returnPage);
+  $html.=api_action_form($cid,'test_backoffice_dashboard','Test Dashboard',$returnPage);
+  $html.=api_action_form($cid,'test_backoffice_kpi','Test KPI Dapur',$returnPage);
+  $html.=api_action_form($cid,'test_backoffice_employees','Test Employees',$returnPage);
+  $html.=api_action_form($cid,'refresh_scope','Refresh Scope',$returnPage);
+ } else {
+  $html.=api_action_form($cid,'refresh_scope','Refresh Scope',$returnPage);
+ }
+ $html.=api_action_form($cid,'revoke_connection','Hapus/Revoke',$returnPage,'btn danger','Cabut koneksi ini?');
+ return $html.'</div>';
+}
 
 function pairing_pending_rows(int $limit=6): array { ensure_pairing_notification_columns(); try{return all("SELECT * FROM api_pairing_requests WHERE direction='incoming' AND status='pending' AND notification_dismissed_at IS NULL ORDER BY id DESC LIMIT ".$limit);}catch(Throwable $e){return [];} }
 function role_key(): string { $u=current_user(); return (string)($u['role_key']??''); }
@@ -655,9 +676,9 @@ elseif($page==='hope_connection'){
  echo '<div class="grid"><div class="card"><h3>Hubungkan ke HOPe</h3><form method="post" action="api_pairing_action.php" class="form-grid compact-form">'.csrf_field().'<input type="hidden" name="act" value="create_request"><input type="hidden" name="target_type" value="hope"><input type="hidden" name="return_page" value="hope_connection"><p><label>Nama Koneksi<input name="connection_name" value="HOPe POS System" required></label></p><p><label>Website HOPe<input name="base_url" placeholder="https://hope.domain.com" required></label></p><p><button class="btn">Hubungkan ke HOPe</button></p></form></div><div class="card"><h3>Test Tanpa Transaksi</h3><p class="muted">Test koneksi memastikan token/pairing valid. Test transfer stok mengirim payload dry-run ke HOPe sehingga stok tidak berubah.</p><a class="btn light" href="?page=error_log">Error Log</a> <a class="btn light" href="?page=api_integrations">Koneksi & API</a></div></div>';
  $incoming=table_exists('api_pairing_requests')?all("SELECT * FROM api_pairing_requests WHERE direction='incoming' AND requester_type IN ('hope','HOPe','external') AND ".api_ui_active_status_sql('status')." ORDER BY id DESC LIMIT 30"):[];
  $outgoing=table_exists('api_pairing_requests')?all("SELECT * FROM api_pairing_requests WHERE direction='outgoing' AND target_type='hope' AND ".api_ui_active_status_sql('status')." ORDER BY id DESC LIMIT 30"):[];
- $conns=table_exists('api_connections')?all("SELECT * FROM api_connections WHERE (remote_system_type='hope' OR connection_type='hope' OR LOWER(connection_name) LIKE '%hope%' OR LOWER(connection_name) LIKE '%hp%') AND ".api_ui_active_status_sql('status')." ORDER BY id DESC LIMIT 30"):[];
+ $conns=table_exists('api_connections')?all("SELECT * FROM api_connections WHERE (LOWER(COALESCE(remote_system_type,'')) IN ('hope','hp','hope_pos','pos') OR LOWER(COALESCE(connection_type,'')) IN ('hope','hp','hope_pos','pos') OR LOWER(COALESCE(connection_name,'')) LIKE '%hope%' OR LOWER(COALESCE(connection_name,'')) LIKE '%hp%' OR LOWER(COALESCE(connection_name,'')) LIKE '%pos%') AND ".api_ui_active_status_sql('status')." ORDER BY id DESC LIMIT 30"):[];
  echo '<h3>Koneksi HOPe Aktif</h3><table><tr><th>Nama</th><th>URL</th><th>Scope</th><th>Status</th><th>Terakhir Test</th><th>Aksi</th></tr>';
- foreach($conns as $c){ $cid=(int)$c['id']; echo '<tr><td>'.e($c['connection_name']).'</td><td>'.e($c['remote_base_url']).'</td><td>'.e($c['access_scope']).'</td><td>'.status_badge2($c['status']).'</td><td>'.e($c['last_test_at']??'-').'<br><small>'.e($c['last_test_message']??'').'</small></td><td><div class="actions mini">'; if(($c['connection_type']??'')==='outgoing'){ echo api_action_form($cid,'test_connection','Test Ping','hope_connection').api_action_form($cid,'test_hope_products','Test Produk','hope_connection').api_action_form($cid,'test_hope_transfer','Test Transfer Stok','hope_connection').api_action_form($cid,'refresh_scope','Refresh Scope','hope_connection'); } else { echo '<span class="muted small">Koneksi masuk; test dilakukan dari HOPe.</span>'; } echo api_action_form($cid,'revoke_connection','Hapus/Revoke','hope_connection','btn danger','Cabut koneksi HOPe ini?').'</div></td></tr>'; }
+ foreach($conns as $c){ echo '<tr><td>'.e($c['connection_name']).'</td><td>'.e($c['remote_base_url']).'</td><td>'.e($c['access_scope']).'</td><td>'.status_badge2($c['status']).'</td><td>'.e($c['last_test_at']??'-').'<br><small>'.e($c['last_test_message']??'').'</small></td><td>'.api_connection_test_actions($c,'hope_connection').'</td></tr>'; }
  if(!$conns) echo '<tr><td colspan="6" class="muted">Belum ada koneksi HOPe aktif.</td></tr>'; echo '</table>';
  echo '<h3>Request Keluar ke HOPe</h3><table><tr><th>Waktu</th><th>URL HOPe</th><th>Status</th><th>Pesan</th><th>Aksi</th></tr>';
  foreach($outgoing as $r){ echo '<tr><td>'.e($r['created_at']).'</td><td>'.e($r['target_base_url']).'</td><td>'.status_badge2($r['status']).'</td><td>'.e($r['last_message']).'</td><td><div class="actions mini"><form method="post" action="api_pairing_action.php">'.csrf_field().'<input type="hidden" name="return_page" value="hope_connection"><input type="hidden" name="act" value="check_status"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Cek Status</button></form><form method="post" action="api_pairing_action.php" onsubmit="return confirm(&quot;Hapus request ini?&quot;)">'.csrf_field().'<input type="hidden" name="return_page" value="hope_connection"><input type="hidden" name="act" value="delete_request"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn danger">Hapus</button></form></div></td></tr>'; }
@@ -674,7 +695,7 @@ elseif($page==='api_integrations'){
  echo '<div class="actions"><a class="btn" href="?page=hope_connection">Koneksi ke HOPe</a><a class="btn light" href="?page=stores">Kelola Toko & API</a><a class="btn light" href="?page=error_log">Error Log</a><a class="btn light" href="?page=api">API Token Manual</a></div>';
  $conns=table_exists('api_connections')?all("SELECT * FROM api_connections WHERE ".api_ui_active_status_sql('status')." ORDER BY FIELD(status,'active','pending'), id DESC LIMIT 80"):[];
  echo '<h3>Status Koneksi Aplikasi</h3><table><tr><th>Jenis</th><th>Nama</th><th>Website</th><th>Scope</th><th>Status</th><th>Terakhir Test</th><th>Aksi</th></tr>';
- foreach($conns as $c){ $cid=(int)$c['id']; $type=api_ui_type_key($c); echo '<tr><td>'.api_ui_type_label($c).'</td><td>'.e($c['connection_name']).'</td><td>'.e($c['remote_base_url']).'</td><td>'.e($c['access_scope']).'</td><td>'.status_badge2($c['status']).'</td><td>'.e($c['last_test_at']??'-').'<br><small>'.e($c['last_test_message']??'').'</small></td><td><div class="actions mini">'; if(($c['connection_type']??'')==='outgoing'){ echo api_action_form($cid,'test_connection','Test Ping'); if($type==='hope'){ echo api_action_form($cid,'test_hope_products','Test Produk').api_action_form($cid,'test_hope_transfer','Test Transfer Stok').api_action_form($cid,'refresh_scope','Refresh Scope'); } elseif($type==='backoffice'){ echo api_action_form($cid,'test_backoffice_health','Test Health').api_action_form($cid,'test_backoffice_dashboard','Test Dashboard').api_action_form($cid,'test_backoffice_kpi','Test KPI Dapur').api_action_form($cid,'test_backoffice_employees','Test Employees').api_action_form($cid,'refresh_scope','Refresh Scope'); } else { echo api_action_form($cid,'refresh_scope','Refresh Scope'); } } else { echo '<span class="muted small">Koneksi masuk; test remote dilakukan dari aplikasi peminta.</span>'; } echo api_action_form($cid,'revoke_connection','Hapus/Revoke','api_integrations','btn danger','Cabut koneksi ini?').'</div></td></tr>'; }
+ foreach($conns as $c){ echo '<tr><td>'.api_ui_type_label($c).'</td><td>'.e($c['connection_name']).'</td><td>'.e($c['remote_base_url']).'</td><td>'.e($c['access_scope']).'</td><td>'.status_badge2($c['status']).'</td><td>'.e($c['last_test_at']??'-').'<br><small>'.e($c['last_test_message']??'').'</small></td><td>'.api_connection_test_actions($c,'api_integrations').'</td></tr>'; }
  if(!$conns) echo '<tr><td colspan="7" class="muted">Belum ada koneksi aplikasi.</td></tr>'; echo '</table>';
  $stores=table_exists('stores')?all("SELECT * FROM stores WHERE NOT (store_code LIKE 'HOPE-%' OR COALESCE(notes,'') LIKE '%HOPe%') ORDER BY store_name"):[];
  echo '<h3>Status API Toko / Cabang</h3><table><tr><th>Kode</th><th>Nama</th><th>Website</th><th>Status</th><th>Last Sync</th><th>Aksi Test</th></tr>';

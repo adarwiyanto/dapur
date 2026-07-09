@@ -69,7 +69,7 @@ try{
    $id=(int)($_POST['id']??0); $r=db()->prepare("SELECT * FROM api_pairing_requests WHERE id=? AND direction='incoming' AND status='pending'"); $r->execute([$id]); $req=$r->fetch(PDO::FETCH_ASSOC); if(!$req) throw new RuntimeException('Request tidak ditemukan.');
    $token='dapur_'.bin2hex(random_bytes(32)); $hash=hash('sha256',$token);
    db()->prepare("INSERT INTO api_connections(connection_name,connection_type,remote_system_type,remote_base_url,access_scope,token_hash,token_plain,access_token_plain,status,paired_from_request_code,paired_by,paired_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,NOW())")
-     ->execute([$req['requester_name'],$req['requester_type'],$req['requester_type'],$req['requester_base_url'],$req['requested_scope'],$hash,$token,$token,'active',$req['request_code'],$uid]);
+     ->execute([$req['requester_name'],'incoming',$req['requester_type'],$req['requester_base_url'],$req['requested_scope'],$hash,$token,$token,'active',$req['request_code'],$uid]);
    db()->prepare("UPDATE api_pairing_requests SET status='approved',access_token_plain=?,token_hash=?,approved_by=?,approved_at=NOW(),last_message='Approved',updated_at=NOW() WHERE id=?")->execute([$token,$hash,$uid,$id]);
    pairing_log_event(null,'api/pairing/approve','in','pair_request_approved','Pairing disetujui.',['request_code'=>$req['request_code'],'requester'=>$req['requester_base_url']]);
    go_pair('Pairing disetujui. Token otomatis siap dipakai oleh peminta.');
@@ -85,7 +85,7 @@ try{
    if($status==='approved' && !empty($res['access_token'])){
      $token=(string)$res['access_token']; $hash=hash('sha256',$token); $scope=(string)($res['access_scope']??$r['requested_scope']);
      db()->prepare("INSERT INTO api_connections(connection_name,connection_type,remote_system_type,remote_base_url,access_scope,token_hash,token_plain,access_token_plain,status,paired_from_request_code,paired_by,paired_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,NOW())")
-       ->execute([$r['target_name']?:$r['target_base_url'],$r['target_type'],$r['target_type'],$r['target_base_url'],$scope,$hash,$token,$token,'active',$r['request_code'],$uid]);
+       ->execute([$r['target_name']?:$r['target_base_url'],'outgoing',$r['target_type'],$r['target_base_url'],$scope,$hash,$token,$token,'active',$r['request_code'],$uid]);
      pairing_log_event(null,'api/pairing/status.php','out','pair_status_approved','Koneksi aktif.',['request_code'=>$r['request_code'],'target'=>$r['target_base_url']]);
    } else pairing_log_event(null,'api/pairing/status.php','out',$status==='failed'?'pair_status_failed':'pair_status_checked',$message,['request_code'=>$r['request_code'],'response'=>$res]);
    go_pair('Status pairing: '.$status.($message!==''?' - '.$message:''));
