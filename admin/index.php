@@ -6,7 +6,7 @@ header('Expires: 0');
 ob_start(); // patch: keep AJAX JSON clean even when admin shell is buffered
 $u=current_user(); $page=$_GET['page']??'dashboard';
 $menus=[
- 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian','🛒','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
+ 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian','🛒','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'hope_connection'=>['Koneksi ke HOPe','🔗','api'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
 ];
 if(!isset($menus[$page])) $page='dashboard'; require_perm($menus[$page][2]); if(($menus[$page][3]??'')==='owner' && !is_owner()){ http_response_code(403); die('Akses ditolak.'); }
 function h2($t){echo '<h2>'.e($t).'</h2>';}
@@ -109,18 +109,19 @@ function api_log_event(?int $storeId, string $endpoint, string $direction, strin
 }
 function short_text($v, int $len=600): string { $t=trim((string)$v); return strlen($t)>$len?substr($t,0,$len).'...':$t; }
 function response_payload(int $code, string $body, string $err): array { return ['http_code'=>$code,'curl_error'=>$err,'response_preview'=>short_text($body,1200)]; }
-function build_transfer_payload(array $store, int $saleId): array {
+function build_transfer_payload(array $store,int $saleId): array {
+ ensure_hope_transfer_schema();
  $h=one('SELECT * FROM kitchen_sales_headers WHERE id=?',[$saleId]);
  if(!$h) throw new RuntimeException('Transfer tidak ditemukan.');
+ $rows=all('SELECT ksi.*,fp.name AS fp_name,fp.sku,fp.unit AS fp_unit,fpsm.store_product_id,fpsm.store_sku,fpsm.store_product_name FROM kitchen_sales_items ksi LEFT JOIN finished_products fp ON fp.id=ksi.finished_product_id LEFT JOIN finished_product_store_mappings fpsm ON fpsm.finished_product_id=fp.id AND fpsm.store_id=? WHERE ksi.sale_id=? ORDER BY ksi.id',[(int)$store['id'],$saleId]);
  $items=[];
- foreach(all('SELECT i.*,fp.name,fp.sku,fp.source_product_id,fp.unit default_unit FROM kitchen_sales_items i JOIN finished_products fp ON fp.id=i.finished_product_id WHERE i.sale_id=? ORDER BY i.id',[$saleId]) as $r){
-  $map=one('SELECT * FROM finished_product_store_mappings WHERE finished_product_id=? AND store_id=? AND is_active=1',[(int)$r['finished_product_id'],(int)$store['id']]);
-  // Mapping cabang tidak wajib. Bila belum ada, toko/cabang akan mencocokkan dari SKU/nama atau membuat produk otomatis saat transfer diterima.
-  $storeProductId=(string)($map['store_product_id']??'');
-  $sku=(string)($map['store_sku']??$r['sku']??'');
-  if($sku==='') $sku='DAPUR-FP-'.(int)$r['finished_product_id'];
-  $name=(string)($map['store_product_name']??$r['name']??'');
-  $items[]=['store_product_id'=>$storeProductId,'sku'=>$sku,'name'=>$name,'qty'=>(float)$r['qty'],'unit'=>$r['unit']?:$r['default_unit'],'transfer_price'=>(float)$r['transfer_price']];
+ foreach($rows as $r){
+  $type=(string)($r['item_type']??'finished');
+  $ref=(int)($r['item_ref_id']??$r['finished_product_id']??0);
+  $name=(string)($r['item_name']??''); if($name==='') $name=(string)($r['store_product_name']??$r['fp_name']??'');
+  $unit=(string)($r['unit']??''); if($unit==='') $unit=(string)($r['fp_unit']??'pcs');
+  $sku=(string)($r['store_sku']??$r['sku']??''); if($sku==='') $sku=($type==='raw'?'DAPUR-RM-':'DAPUR-FP-').$ref;
+  $items[]=['store_product_id'=>(string)($r['store_product_id']??$ref),'sku'=>$sku,'name'=>$name,'item_type'=>$type==='raw'?'raw_material':'finished_good','qty'=>(float)$r['qty'],'unit'=>$unit,'transfer_price'=>(float)$r['transfer_price']];
  }
  return ['store_code'=>$store['store_code'],'source'=>'DAPUR_ADENA','transfer_no'=>$h['sale_no'],'transfer_date'=>$h['sale_date'],'items'=>$items,'notes'=>$h['notes']??''];
 }
@@ -137,6 +138,26 @@ function next_opname_no(): string { return next_no('OPN','stock_opname_headers',
 function ensure_stock_opname_tables(): void {
  db()->exec("CREATE TABLE IF NOT EXISTS stock_opname_headers (id BIGINT AUTO_INCREMENT PRIMARY KEY, opname_no VARCHAR(60) UNIQUE NOT NULL, opname_date DATE NOT NULL, item_type VARCHAR(20) NOT NULL, total_items INT NOT NULL DEFAULT 0, notes TEXT NULL, created_by INT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
  db()->exec("CREATE TABLE IF NOT EXISTS stock_opname_items (id BIGINT AUTO_INCREMENT PRIMARY KEY, opname_id BIGINT NOT NULL, item_type VARCHAR(20) NOT NULL, item_id INT NOT NULL, item_name VARCHAR(180) NULL, system_qty DECIMAL(18,4) NOT NULL DEFAULT 0, physical_qty DECIMAL(18,4) NOT NULL DEFAULT 0, difference_qty DECIMAL(18,4) NOT NULL DEFAULT 0, unit VARCHAR(40) NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, KEY idx_opname_id(opname_id), KEY idx_item(item_type,item_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+
+function ensure_hope_transfer_schema(): void {
+ try{ if(!column_exists_local('kitchen_sales_items','item_type')) db()->exec("ALTER TABLE kitchen_sales_items ADD COLUMN item_type VARCHAR(20) NOT NULL DEFAULT 'finished' AFTER sale_id"); }catch(Throwable $e){}
+ try{ if(!column_exists_local('kitchen_sales_items','item_ref_id')) db()->exec("ALTER TABLE kitchen_sales_items ADD COLUMN item_ref_id INT NULL AFTER item_type"); }catch(Throwable $e){}
+ try{ if(!column_exists_local('kitchen_sales_items','item_name')) db()->exec("ALTER TABLE kitchen_sales_items ADD COLUMN item_name VARCHAR(180) NULL AFTER item_ref_id"); }catch(Throwable $e){}
+ try{ if(!column_exists_local('api_connections','token_plain')) db()->exec("ALTER TABLE api_connections ADD COLUMN token_plain TEXT NULL AFTER token_hash"); }catch(Throwable $e){}
+ try{ if(!column_exists_local('api_connections','access_token_plain')) db()->exec("ALTER TABLE api_connections ADD COLUMN access_token_plain TEXT NULL AFTER token_plain"); }catch(Throwable $e){}
+}
+function dapur_transfer_catalog(): array {
+ ensure_hope_transfer_schema();
+ $out=[];
+ foreach(all('SELECT id,name,unit,transfer_price FROM finished_products WHERE is_active=1 ORDER BY name') as $fp){ $out[]=['key'=>'finished:'.(int)$fp['id'],'type'=>'finished','id'=>(int)$fp['id'],'name'=>$fp['name'],'unit'=>$fp['unit']?:'pcs','price'=>(float)$fp['transfer_price'],'stock'=>stock_qty('finished',(int)$fp['id'])]; }
+ foreach(all('SELECT id,name,unit,last_cost FROM raw_materials WHERE is_active=1 ORDER BY name') as $rm){ $out[]=['key'=>'raw:'.(int)$rm['id'],'type'=>'raw','id'=>(int)$rm['id'],'name'=>$rm['name'],'unit'=>$rm['unit']?:'pcs','price'=>(float)$rm['last_cost'],'stock'=>stock_qty('raw',(int)$rm['id'])]; }
+ return $out;
+}
+function dapur_item_by_key(string $key): ?array {
+ [$type,$id]=array_pad(explode(':',$key,2),2,'0'); $id=(int)$id; if($id<=0) return null;
+ if($type==='raw'){ $r=one('SELECT id,name,unit,last_cost FROM raw_materials WHERE id=? AND is_active=1',[$id]); if(!$r) return null; return ['type'=>'raw','id'=>$id,'name'=>$r['name'],'unit'=>$r['unit']?:'pcs','price'=>(float)$r['last_cost']]; }
+ $r=one('SELECT id,name,unit,transfer_price FROM finished_products WHERE id=? AND is_active=1',[$id]); if(!$r) return null; return ['type'=>'finished','id'=>$id,'name'=>$r['name'],'unit'=>$r['unit']?:'pcs','price'=>(float)$r['transfer_price']];
 }
 
 function wants_ajax_response(): bool {
@@ -158,6 +179,7 @@ if($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['act']??'')==='dismiss_pairing
 $f=flash();
 normalize_dapur_roles_runtime();
 ensure_dapur_employee_role_column();
+ensure_hope_transfer_schema();
 $pairNotif=pairing_pending_rows(8); $pairNotifCount=count($pairNotif);
 ?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css?v=20260702api"><script src="../assets/app.js?v=20260623f" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php
 $navGroups=[
@@ -165,7 +187,7 @@ $navGroups=[
  ['label'=>'Produk Jadi','items'=>['finished','finished_hidden']],
  ['label'=>'BOM','items'=>['bom','bom_hidden']],
  ['label'=>'Kegiatan Pegawai','items'=>['activities','activity_types']],
- ['label'=>'Admin','items'=>['users','api_integrations','error_log','owner_permissions']],
+ ['label'=>'Admin','items'=>['users','hope_connection','api_integrations','error_log','owner_permissions']],
 ];
 foreach($navGroups as $grp){
  $visible=[]; foreach($grp['items'] as $k){ if(!isset($menus[$k])) continue; $m=$menus[$k]; if(($m[3]??'')==='owner' && !is_owner()) continue; if(can($m[2])) $visible[]=$k; }
@@ -455,23 +477,21 @@ elseif($page==='sales'){
   $store=one('SELECT * FROM stores WHERE id=? AND is_active=1',[(int)($_POST['store_id']??0)]);
   if(!$store){ flash('Toko tujuan tidak valid/nonaktif.','err'); redirect('?page=sales'); }
   $rows=[]; $total=0.0;
-  foreach($_POST['finished_product_id']??[] as $i=>$fid){
-   $fid=(int)$fid; $qty=(float)($_POST['qty'][$i]??0); if($fid<=0||$qty<=0) continue;
-   $fp=one('SELECT * FROM finished_products WHERE id=? AND is_active=1',[$fid]);
-   if(!$fp){ flash('Produk jadi tidak valid/nonaktif.','err'); redirect('?page=sales'); }
-   $stock=stock_qty('finished',$fid);
-   if($stock+0.0001<$qty){ flash('Stok barang jadi tidak cukup untuk '.($fp['name']??'produk').'. Stok saat ini: '.dec($stock),'err'); redirect('?page=sales'); }
-   $priceRaw=trim((string)($_POST['transfer_price'][$i]??'')); $price=$priceRaw===''?(float)$fp['transfer_price']:(float)$priceRaw;
+  foreach($_POST['transfer_item']??[] as $i=>$key){
+   $item=dapur_item_by_key((string)$key); $qty=(float)($_POST['qty'][$i]??0); if(!$item||$qty<=0) continue;
+   $stock=stock_qty($item['type'],(int)$item['id']);
+   if($stock+0.0001<$qty){ flash('Stok tidak cukup untuk '.($item['name']??'item').'. Stok saat ini: '.dec($stock),'err'); redirect('?page=sales'); }
+   $priceRaw=trim((string)($_POST['transfer_price'][$i]??'')); $price=$priceRaw===''?(float)$item['price']:(float)$priceRaw;
    $sub=$qty*$price; $total+=$sub;
-   $rows[]=['fp'=>$fp,'qty'=>$qty,'price'=>$price,'subtotal'=>$sub];
+   $rows[]=['item'=>$item,'qty'=>$qty,'price'=>$price,'subtotal'=>$sub];
   }
-  if(count($rows)<1){ flash('Minimal 1 produk dan qty wajib diisi.','err'); redirect('?page=sales'); }
+  if(count($rows)<1){ flash('Minimal 1 bahan/produk dan qty wajib diisi.','err'); redirect('?page=sales'); }
   $no=next_no('KDS','kitchen_sales_headers','sale_no');
   try{
    db()->beginTransaction();
    execq('INSERT INTO kitchen_sales_headers(sale_no,sale_date,store_id,sale_type,status,notes,created_by,posted_at) VALUES(?,?,?,?,?,?,?,NOW())',[$no,postval('sale_date',date('Y-m-d')),(int)$store['id'],'store_distribution','posted',postval('notes'),(int)($u['id']??0)]);
    $sid=(int)db()->lastInsertId();
-   foreach($rows as $r){ $fp=$r['fp']; execq('INSERT INTO kitchen_sales_items(sale_id,finished_product_id,qty,unit,transfer_price,subtotal) VALUES(?,?,?,?,?,?)',[$sid,(int)$fp['id'],$r['qty'],$fp['unit'],$r['price'],$r['subtotal']]); add_ledger('finished',(int)$fp['id'],'sale_to_store','kitchen_sales_headers',$sid,0,(float)$r['qty'],(float)$r['price'],$no,(int)($u['id']??0)); }
+   foreach($rows as $r){ $it=$r['item']; $finishedId=$it['type']==='finished'?(int)$it['id']:0; execq('INSERT INTO kitchen_sales_items(sale_id,item_type,item_ref_id,item_name,finished_product_id,qty,unit,transfer_price,subtotal) VALUES(?,?,?,?,?,?,?,?,?)',[$sid,$it['type'],(int)$it['id'],$it['name'],$finishedId,$r['qty'],$it['unit'],$r['price'],$r['subtotal']]); add_ledger($it['type'],(int)$it['id'],'sale_to_store','kitchen_sales_headers',$sid,0,(float)$r['qty'],(float)$r['price'],$no,(int)($u['id']??0)); }
    execq('UPDATE kitchen_sales_headers SET total_amount=? WHERE id=?',[$total,$sid]);
    db()->commit();
   }catch(Throwable $e){ if(db()->inTransaction()) db()->rollBack(); flash('Gagal membuat transfer: '.$e->getMessage(),'err'); redirect('?page=sales'); }
@@ -486,7 +506,7 @@ elseif($page==='sales'){
   api_log_event((int)$store['id'],$res['endpoint'],'out',$status,$res['message'],['request'=>$payload,'response'=>response_payload((int)$res['http_code'],(string)$res['body'],(string)$res['curl_error'])]);
   flash($msg.' No: '.$no, $status==='failed_sync'?'err':'ok'); redirect('?page=sales');
  }
- h2('Penjualan / Distribusi ke Toko'); $fps=all('SELECT * FROM finished_products WHERE is_active=1 ORDER BY name'); echo '<form method="post">'.csrf_field().'<input type="hidden" name="act" value="create_transfer"><div class="form-grid"><p><label>Tanggal<input name="sale_date" type="date" value="'.date('Y-m-d').'"></label></p><p><label>Toko Tujuan<select name="store_id">'; foreach(all('SELECT * FROM stores WHERE is_active=1 ORDER BY store_name') as $s) echo '<option value="'.(int)$s['id'].'">'.e($s['store_name']).'</option>'; echo '</select></label></p><p><label>Catatan<input name="notes"></label></p></div><table><tr><th>Produk</th><th>Qty</th><th>Harga Jual Dapur</th><th>Stok</th></tr>'; for($i=0;$i<6;$i++){ echo '<tr><td><select name="finished_product_id[]"><option value="">-</option>'; foreach($fps as $fp) echo '<option value="'.(int)$fp['id'].'">'.e($fp['name']).'</option>'; echo '</select></td><td><input name="qty[]" type="number" step="0.0001"></td><td><input name="transfer_price[]" type="number" step="0.01" placeholder="otomatis dari produk"></td><td class="muted">isi sesuai stok</td></tr>'; } echo '</table><p><button class="btn">Posting & Kirim API ke Toko</button></p></form>'; echo '<h3>Riwayat Transfer</h3><table><tr><th>No</th><th>Toko</th><th>Total</th><th>Status</th><th>Detail API</th><th>Aksi</th></tr>'; foreach(all('SELECT h.*,s.store_name FROM kitchen_sales_headers h LEFT JOIN stores s ON s.id=h.store_id ORDER BY h.id DESC LIMIT 30') as $r){ $detail=trim((string)($r['remote_response']??'')); echo '<tr><td>'.e($r['sale_no']).'</td><td>'.e($r['store_name']).'</td><td>'.rupiah($r['total_amount']).'</td><td><span class="badge">'.e($r['status']).'</span></td><td>'.($detail!==''?'<details><summary>Lihat</summary><pre class="log-pre">'.e(short_text($detail,1200)).'</pre></details>':'-').'</td><td>'.($r['status']==='failed_sync'?'<form method="post">'.csrf_field().'<input type="hidden" name="act" value="resync_transfer"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Kirim Ulang</button></form>':'-').'</td></tr>'; } echo '</table>';
+ h2('Pengiriman Stok ke HOPe/Toko'); $catalog=dapur_transfer_catalog(); echo '<form method="post" class="compact-form">'.csrf_field().'<input type="hidden" name="act" value="create_transfer"><div class="form-grid"><p><label>Tanggal<input name="sale_date" type="date" value="'.date('Y-m-d').'"></label></p><p><label>Tujuan<select name="store_id">'; foreach(all('SELECT * FROM stores WHERE is_active=1 ORDER BY store_name') as $s) echo '<option value="'.(int)$s['id'].'">'.e($s['store_name']).'</option>'; echo '</select></label></p><p><label>Catatan<input name="notes"></label></p></div><div class="table-scroll"><table class="compact-table"><tr><th>Bahan/Produk</th><th>Qty</th><th>Harga Transfer</th><th>Stok</th></tr>'; for($i=0;$i<8;$i++){ echo '<tr><td><select name="transfer_item[]"><option value="">-</option>'; foreach($catalog as $it) echo '<option value="'.e($it['key']).'">'.e(($it['type']==='raw'?'[Bahan] ':'[Produk] ').$it['name']).'</option>'; echo '</select></td><td><input name="qty[]" type="number" step="0.0001"></td><td><input name="transfer_price[]" type="number" step="0.01" placeholder="otomatis"></td><td class="muted">lihat menu Stok</td></tr>'; } echo '</table></div><p><button class="btn">Posting & Kirim Stok</button></p></form>'; echo '<h3>Riwayat Transfer</h3><table><tr><th>No</th><th>Tujuan</th><th>Total</th><th>Status</th><th>Detail API</th><th>Aksi</th></tr>'; foreach(all('SELECT h.*,s.store_name FROM kitchen_sales_headers h LEFT JOIN stores s ON s.id=h.store_id ORDER BY h.id DESC LIMIT 30') as $r){ $detail=trim((string)($r['remote_response']??'')); echo '<tr><td>'.e($r['sale_no']).'</td><td>'.e($r['store_name']).'</td><td>'.rupiah($r['total_amount']).'</td><td><span class="badge">'.e($r['status']).'</span></td><td>'.($detail!==''?'<details><summary>Lihat</summary><pre class="log-pre">'.e(short_text($detail,1200)).'</pre></details>':'-').'</td><td>'.($r['status']==='failed_sync'?'<form method="post">'.csrf_field().'<input type="hidden" name="act" value="resync_transfer"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Kirim Ulang</button></form>':'-').'</td></tr>'; } echo '</table>';
 }
 elseif($page==='activity_types'){
  if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -594,6 +614,24 @@ elseif($page==='owner_permissions'){
   foreach(all('SELECT * FROM permissions ORDER BY id') as $p){ echo '<tr><td><input type="checkbox" name="permission_id[]" value="'.(int)$p['id'].'" '.(isset($active[(int)$p['id']])?'checked':'').'></td><td>'.e($p['permission_key']).'</td><td>'.e($p['permission_name']).'</td></tr>'; }
   echo '</table><p><button class="btn">Simpan Permission</button></p></form>';
  }
+}
+elseif($page==='hope_connection'){
+ ensure_api_pairing_schema(); ensure_hope_transfer_schema();
+ h2('Koneksi ke HOPe');
+ echo '<p class="muted">Masukkan website HOPe saja. Setelah request di-approve di HOPe, klik Cek Status. Token akan tersimpan otomatis sebagai tujuan pengiriman stok.</p>';
+ echo '<form method="post" action="api_pairing_action.php" class="form-grid compact-form">'.csrf_field().'<input type="hidden" name="act" value="create_request"><input type="hidden" name="target_type" value="hope"><input type="hidden" name="return_page" value="hope_connection"><p><label>Nama Koneksi<input name="connection_name" value="HOPe POS System" required></label></p><p><label>Website HOPe<input name="base_url" placeholder="https://hope.domain.com" required></label></p><p><button class="btn">Hubungkan ke HOPe</button></p></form>';
+ $incoming=table_exists('api_pairing_requests')?all("SELECT * FROM api_pairing_requests WHERE direction='incoming' AND requester_type IN ('hope','HOPe','external') ORDER BY id DESC LIMIT 30"):[];
+ $outgoing=table_exists('api_pairing_requests')?all("SELECT * FROM api_pairing_requests WHERE direction='outgoing' AND target_type='hope' ORDER BY id DESC LIMIT 30"):[];
+ $conns=table_exists('api_connections')?all("SELECT * FROM api_connections WHERE remote_system_type='hope' OR connection_type='hope' ORDER BY id DESC LIMIT 30"):[];
+ echo '<h3>Request Masuk dari HOPe</h3><table><tr><th>Waktu</th><th>Peminta</th><th>URL</th><th>Scope</th><th>Status</th><th>Aksi</th></tr>';
+ foreach($incoming as $r){ echo '<tr><td>'.e($r['created_at']).'</td><td>'.e($r['requester_name']).'</td><td>'.e($r['requester_base_url']).'</td><td>'.e($r['requested_scope']).'</td><td>'.status_badge2($r['status']).'</td><td>'; if($r['status']==='pending'){ echo '<form method="post" action="api_pairing_action.php" style="display:inline">'.csrf_field().'<input type="hidden" name="return_page" value="hope_connection"><input type="hidden" name="act" value="approve"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn">Approve</button></form>'; } else echo '-'; echo '</td></tr>'; }
+ if(!$incoming) echo '<tr><td colspan="6" class="muted">Belum ada request masuk.</td></tr>'; echo '</table>';
+ echo '<h3>Request Keluar ke HOPe</h3><table><tr><th>Waktu</th><th>URL HOPe</th><th>Status</th><th>Pesan</th><th>Aksi</th></tr>';
+ foreach($outgoing as $r){ echo '<tr><td>'.e($r['created_at']).'</td><td>'.e($r['target_base_url']).'</td><td>'.status_badge2($r['status']).'</td><td>'.e($r['last_message']).'</td><td><form method="post" action="api_pairing_action.php">'.csrf_field().'<input type="hidden" name="return_page" value="hope_connection"><input type="hidden" name="act" value="check_status"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Cek Status</button></form></td></tr>'; }
+ if(!$outgoing) echo '<tr><td colspan="5" class="muted">Belum ada request keluar.</td></tr>'; echo '</table>';
+ echo '<h3>Koneksi HOPe Aktif</h3><table><tr><th>Nama</th><th>URL</th><th>Scope</th><th>Status</th></tr>';
+ foreach($conns as $c){ echo '<tr><td>'.e($c['connection_name']).'</td><td>'.e($c['remote_base_url']).'</td><td>'.e($c['access_scope']).'</td><td>'.status_badge2($c['status']).'</td></tr>'; }
+ if(!$conns) echo '<tr><td colspan="4" class="muted">Belum ada koneksi HOPe aktif.</td></tr>'; echo '</table>';
 }
 elseif($page==='api_integrations'){
  ensure_pairing_notification_columns();

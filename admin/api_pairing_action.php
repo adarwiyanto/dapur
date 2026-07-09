@@ -6,7 +6,7 @@ require_once __DIR__ . '/../core/api_pairing.php';
 require_login(); ensure_api_pairing_schema();
 if(function_exists('verify_csrf')) verify_csrf();
 $me=current_user(); $uid=(int)($me['id']??0); $act=$_POST['act']??'';
-function go_pair($m=''){ header('Location: index.php?page=api_integrations'.($m?'&msg='.urlencode($m):'')); exit; }
+function go_pair($m=''){ $page=preg_replace('/[^a-z0-9_]/i','', (string)($_POST['return_page']??'api_integrations')); if($page==='') $page='api_integrations'; header('Location: index.php?page='.$page.($m?'&msg='.urlencode($m):'')); exit; }
 try{
  if($act==='create_request'){
    $name=trim((string)($_POST['connection_name']??'Koneksi Baru')); $url=pairing_normalize_url((string)($_POST['base_url']??'')); $target=trim((string)($_POST['target_type']??'adena_store'));
@@ -37,8 +37,14 @@ try{
    $status=(string)($res['status']??($res['ok']?'pending':'failed'));
    db()->prepare('UPDATE api_pairing_requests SET status=?,last_checked_at=NOW(),last_message=? WHERE id=?')->execute([$status,(string)($res['message']??''),$id]);
    if($status==='approved' && !empty($res['access_token'])){
-     db()->prepare("INSERT INTO api_connections(connection_name,connection_type,remote_base_url,remote_system_type,access_scope,token_plain,status,paired_from_request_code,paired_by,paired_at) VALUES(?,?,?,?,?,?,'active',?,?,NOW())")
-       ->execute([$r['target_name']?:$r['target_base_url'],$r['target_type'],$r['target_base_url'],$r['target_type'],(string)($res['access_scope']??$r['requested_scope']),(string)$res['access_token'],$r['request_code'],$uid]);
+     $token=(string)$res['access_token'];
+     db()->prepare("INSERT INTO api_connections(connection_name,connection_type,remote_base_url,remote_system_type,access_scope,token_hash,token_plain,status,paired_from_request_code,paired_by,paired_at) VALUES(?,?,?,?,?,?,?,'active',?,?,NOW())")
+       ->execute([$r['target_name']?:$r['target_base_url'],$r['target_type'],$r['target_base_url'],$r['target_type'],(string)($res['access_scope']??$r['requested_scope']),hash('sha256',$token),$token,$r['request_code'],$uid]);
+     if(($r['target_type']??'')==='hope'){
+       $code='HOPE-'.substr(strtoupper(sha1((string)$r['target_base_url'])),0,8);
+       db()->prepare('INSERT INTO stores(store_code,store_name,api_base_url,api_token,is_active,notes) VALUES(?,?,?,?,1,?) ON DUPLICATE KEY UPDATE store_name=VALUES(store_name),api_base_url=VALUES(api_base_url),api_token=VALUES(api_token),is_active=1,notes=VALUES(notes)')
+         ->execute([$code,$r['target_name']?:'HOPe POS System',$r['target_base_url'],$token,'Koneksi otomatis dari menu Koneksi ke HOPe']);
+     }
    }
    go_pair('Status pairing: '.$status);
  }
