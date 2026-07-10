@@ -66,13 +66,31 @@ try{
    go_pair($ok?'Request pairing terkirim. Approve di tujuan, lalu klik Cek Status.':'Request gagal: '.$message);
  }
  if($act==='approve'){
-   $id=(int)($_POST['id']??0); $r=db()->prepare("SELECT * FROM api_pairing_requests WHERE id=? AND direction='incoming' AND status='pending'"); $r->execute([$id]); $req=$r->fetch(PDO::FETCH_ASSOC); if(!$req) throw new RuntimeException('Request tidak ditemukan.');
-   $token='dapur_'.bin2hex(random_bytes(32)); $hash=hash('sha256',$token);
-   db()->prepare("INSERT INTO api_connections(connection_name,connection_type,remote_system_type,remote_base_url,access_scope,token_hash,token_plain,access_token_plain,status,paired_from_request_code,paired_by,paired_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,NOW())")
-     ->execute([$req['requester_name'],'incoming',$req['requester_type'],$req['requester_base_url'],$req['requested_scope'],$hash,$token,$token,'active',$req['request_code'],$uid]);
-   db()->prepare("UPDATE api_pairing_requests SET status='approved',access_token_plain=?,token_hash=?,approved_by=?,approved_at=NOW(),last_message='Approved',updated_at=NOW() WHERE id=?")->execute([$token,$hash,$uid,$id]);
-   pairing_log_event(null,'api/pairing/approve','in','pair_request_approved','Pairing disetujui.',['request_code'=>$req['request_code'],'requester'=>$req['requester_base_url']]);
-   go_pair('Pairing disetujui. Token otomatis siap dipakai oleh peminta.');
+   $id=(int)($_POST['id']??0); $r=db()->prepare("SELECT * FROM api_pairing_requests WHERE id=? AND direction='incoming' AND status='pending'"); $r->execute([$id]); $req=$r->fetch(PDO::FETCH_ASSOC); if(!$req) throw new RuntimeException('Request tidak ditemukan atau sudah diproses.');
+
+   // Untuk pairing dari Back Office, token final wajib berasal dari Back Office.
+   // Fallback token lokal dipertahankan hanya untuk kompatibilitas pairing lama/non-Back Office.
+   $isBackOffice=strtolower(trim((string)$req['requester_type']))==='backoffice';
+   $token=trim((string)($req['access_token_plain']??''));
+   if($isBackOffice && strlen($token)<20) throw new RuntimeException('Token dari Back Office tidak tersedia. Hapus request ini lalu buat pairing ulang dari Back Office.');
+   if($token==='') $token='dapur_'.bin2hex(random_bytes(32));
+   $hash=hash('sha256',$token);
+   $storedHash=strtolower(trim((string)($req['token_hash']??'')));
+   if($storedHash!=='' && !hash_equals($hash,$storedHash)) throw new RuntimeException('Validasi token pairing gagal. Silakan pairing ulang.');
+
+   $pdo=db(); $pdo->beginTransaction();
+   try{
+     // Hindari koneksi ganda bila request yang sama pernah tersimpan sebelumnya.
+     $pdo->prepare("UPDATE api_connections SET status='revoked',revoked_by=?,revoked_at=NOW(),last_test_status='revoked',last_test_message='Digantikan approval pairing ulang',updated_at=NOW() WHERE paired_from_request_code=? AND status='active'")
+       ->execute([$uid,$req['request_code']]);
+     $pdo->prepare("INSERT INTO api_connections(connection_name,connection_type,remote_system_type,remote_base_url,access_scope,token_hash,token_plain,access_token_plain,status,paired_from_request_code,paired_by,paired_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,NOW())")
+       ->execute([$req['requester_name'],'incoming',$req['requester_type'],$req['requester_base_url'],$req['requested_scope'],$hash,$token,$token,'active',$req['request_code'],$uid]);
+     $pdo->prepare("UPDATE api_pairing_requests SET status='approved',access_token_plain=?,token_hash=?,approved_by=?,approved_at=NOW(),last_message='Approved',updated_at=NOW() WHERE id=?")
+       ->execute([$token,$hash,$uid,$id]);
+     $pdo->commit();
+   }catch(Throwable $e){ if($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
+   pairing_log_event(null,'api/pairing/approve','in','pair_request_approved','Pairing disetujui dengan token dari sistem peminta.',['request_code'=>$req['request_code'],'requester'=>$req['requester_base_url'],'requester_type'=>$req['requester_type']]);
+   go_pair('Pairing disetujui. Koneksi menggunakan token yang diterbitkan Back Office.');
  }
  if($act==='reject'){
    $id=(int)($_POST['id']??0); db()->prepare("UPDATE api_pairing_requests SET status='rejected',reject_reason=?,rejected_by=?,rejected_at=NOW(),last_message='Rejected',updated_at=NOW() WHERE id=? AND direction='incoming'")->execute([trim((string)($_POST['reason']??'')),$uid,$id]); go_pair('Pairing ditolak.');
