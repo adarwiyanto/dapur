@@ -38,7 +38,7 @@ function pairing_scope_for(string $requesterType,string $targetType=''): string 
 }
 function pairing_scope_allows(string $have,string $need): bool {
   if($have==='superadmin') return true;
-  if($have==='admin_rw' && in_array($need,['','readonly','products.read','stock.view','dashboard.read','employees.read','kpi.read','stock_transfer.write','admin_rw'],true)) return true;
+  if($have==='admin_rw') return true;
   if($need==='' || $need==='readonly') return true;
   if($have===$need) return true;
   if($have==='dapur_stock_sender' && in_array($need,['products.read','stock_transfer.write','dapur_stock_sender','readonly'],true)) return true;
