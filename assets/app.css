@@ -1207,3 +1207,92 @@ input,select,textarea{border-color:var(--border)!important;background:#fff!impor
   body.print-employee-report .employee-modal-scroll{overflow:visible!important;padding:0!important}
   body.print-employee-report .company-report-logo{border:0!important}
 }
+
+/* Patch 20260711c - riwayat transaksi, dokumen cetak, stok desktop, dan transfer dinamis */
+.history-modal{z-index:1050}
+.record-modal{z-index:1120}
+.history-modal-card{width:min(1420px,97vw);max-height:94vh;display:flex;flex-direction:column}
+.history-modal-scroll{padding:18px;overflow:auto}
+.history-filter{display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,.7fr) minmax(160px,.7fr) auto;gap:12px;align-items:end;padding:14px;border:1px solid var(--border);border-radius:14px;background:#f8fafc;margin-bottom:16px}
+.history-filter p{margin:0}
+.history-filter-action{display:flex;align-items:end}
+.history-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.history-summary>div{padding:14px 16px;border:1px solid var(--border);border-radius:14px;background:#fff;display:flex;flex-direction:column;gap:4px}
+.history-summary strong{font-size:18px;color:var(--text);line-height:1.2}
+.history-summary span{font-size:12px;color:var(--muted)}
+.history-table th,.history-table td{vertical-align:middle}
+.history-table .actions{flex-wrap:nowrap}
+.record-modal-card{width:min(1120px,96vw);max-height:96vh;display:flex;flex-direction:column;background:#eef2f7}
+.record-modal-scroll{overflow:auto;padding:18px}
+.record-actions{padding:12px 18px;border-top:1px solid var(--border);background:#fff;justify-content:flex-end}
+.record-report{width:min(900px,100%);margin:0 auto;background:#fff;padding:34px 38px;border-radius:10px;box-shadow:0 12px 34px rgba(15,23,42,.12);color:#172033}
+.record-letterhead{display:grid;grid-template-columns:82px 1fr;gap:18px;align-items:center;padding-bottom:16px;border-bottom:3px solid var(--primary)}
+.record-letterhead img{width:76px;height:76px;object-fit:contain;border-radius:12px;border:1px solid var(--border);background:#fff}
+.record-company{font-size:24px;font-weight:800;letter-spacing:.01em;color:var(--primary)}
+.record-branch{font-size:15px;font-weight:700;margin-top:2px}
+.record-contact{font-size:11px;line-height:1.5;color:#64748b;margin-top:5px}
+.record-title-row{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin:24px 0 18px}
+.record-title-row h2{font-size:21px;margin:0 0 4px;letter-spacing:.02em}
+.record-number{min-width:210px;border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:right}
+.record-number span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#64748b}
+.record-number strong{display:block;margin-top:3px;font-size:14px}
+.record-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}
+.record-meta.compact{margin-top:18px}
+.record-meta>div{border:1px solid #dbe3ed;border-radius:9px;padding:9px 11px;min-height:58px}
+.record-meta span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:4px}
+.record-meta strong{font-size:12px;line-height:1.45;word-break:break-word}
+.record-section-title{font-size:14px;margin:22px 0 8px}
+.record-table{width:100%;border-collapse:collapse!important;border-radius:0!important;margin:0;background:#fff!important}
+.record-table th,.record-table td{border:1px solid #cbd5e1!important;padding:8px 9px!important;font-size:11px;line-height:1.35}
+.record-table th{background:#eef4fa!important;color:#334155!important;text-align:left}
+.record-table .num{text-align:right;white-space:nowrap}
+.record-table tfoot th{font-size:12px;background:#e6f0fa!important}
+.record-detail-table th{width:27%}
+.record-detail-table td{font-size:12px}
+.record-grand-total th,.record-grand-total td{font-size:14px!important;font-weight:800;background:#e6f0fa!important}
+.record-note{margin-top:16px;border:1px solid #dbe3ed;border-radius:9px;padding:11px 13px;min-height:64px}
+.record-note span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#64748b}
+.record-note p{margin:5px 0 0;font-size:12px;line-height:1.5}
+.record-sync-note{margin-top:14px;padding:12px;border:1px solid #fecaca;border-radius:9px;background:#fff7f7}
+.record-signatures{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:56px;margin-top:38px;text-align:center;font-size:11px;page-break-inside:avoid}
+.record-signatures:has(>div:nth-child(3)){grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}
+.transfer-table-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 8px}
+.transfer-table-head h3{margin:0 0 3px}
+.transfer-table select{min-width:280px}
+.transfer-table input{min-width:125px}
+.transfer-remove{padding:8px 10px!important}
+.stock-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}
+.stock-summary>div{border:1px solid var(--border);border-radius:14px;padding:16px;background:linear-gradient(180deg,#fff,#f8fafc)}
+.stock-summary span{display:block;color:var(--muted);font-size:12px}
+.stock-summary strong{display:block;font-size:25px;margin-top:5px;color:var(--primary)}
+.stock-toolbar{display:flex;justify-content:flex-end;margin-bottom:16px}
+.stock-toolbar label{width:min(480px,100%)}
+.stock-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+.stock-panel{border:1px solid var(--border);border-radius:16px;background:#fff;overflow:hidden;min-width:0}
+.stock-panel-head{padding:14px 16px;border-bottom:1px solid var(--border);background:#f8fafc}
+.stock-panel-head h3{margin:0 0 2px}
+.stock-panel-head span{font-size:12px;color:var(--muted)}
+.stock-table{min-width:650px}
+.stock-table .stock-qty{font-size:15px;font-weight:800;color:var(--primary)}
+.stock-table tr[hidden]{display:none!important}
+@media(max-width:1180px){.stock-layout{grid-template-columns:1fr}.history-filter{grid-template-columns:repeat(3,minmax(0,1fr))}.history-filter-action{grid-column:1/-1}.record-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.history-modal-card,.record-modal-card{width:99vw;max-height:98vh}.history-modal-scroll,.record-modal-scroll{padding:8px}.history-filter{grid-template-columns:1fr}.history-filter-action{grid-column:auto}.history-summary,.stock-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.record-report{padding:20px 16px}.record-letterhead{grid-template-columns:58px 1fr;gap:12px}.record-letterhead img{width:54px;height:54px}.record-company{font-size:19px}.record-title-row{display:block}.record-number{text-align:left;margin-top:12px;min-width:0}.record-meta{grid-template-columns:1fr}.record-signatures,.record-signatures:has(>div:nth-child(3)){grid-template-columns:1fr;gap:28px}.transfer-table-head{align-items:flex-start;flex-direction:column}.stock-summary{grid-template-columns:1fr 1fr}}
+@media print{
+ body.print-record-report{background:#fff!important}
+ body.print-record-report *{visibility:hidden!important}
+ body.print-record-report .record-report.is-printing,body.print-record-report .record-report.is-printing *{visibility:visible!important}
+ body.print-record-report .record-report.is-printing{position:absolute!important;left:0!important;top:0!important;width:100%!important;max-width:none!important;margin:0!important;padding:12mm 14mm!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:#fff!important}
+ body.print-record-report .record-report.is-printing .no-print{display:none!important}
+ body.print-record-report .record-table th,body.print-record-report .record-table td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ body.print-record-report .record-letterhead{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+@media print{
+ body.print-record-report .record-modal:not([hidden]){visibility:visible!important;position:static!important;inset:auto!important;display:block!important;padding:0!important;background:#fff!important}
+ body.print-record-report .record-modal:not([hidden])>.record-modal-card{visibility:visible!important;position:static!important;width:100%!important;max-width:none!important;max-height:none!important;display:block!important;overflow:visible!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:#fff!important}
+ body.print-record-report .record-modal:not([hidden]) .record-modal-scroll{visibility:visible!important;overflow:visible!important;padding:0!important}
+ body.print-record-report .record-report.is-printing{position:static!important}
+ body.print-record-report .record-modal:not([hidden]) .modal-head,body.print-record-report .record-modal:not([hidden]) .record-actions{display:none!important}
+}
+.badge.ok{background:#ecfdf5!important;border-color:#a7f3d0!important;color:#047857!important}
+.badge.warn{background:#fffbeb!important;border-color:#fde68a!important;color:#92400e!important}
+.badge.danger{background:#fef2f2!important;border-color:#fecaca!important;color:#b91c1c!important}

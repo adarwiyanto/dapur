@@ -376,3 +376,153 @@ document.addEventListener('submit', async e => {
     if (row) row.remove();
   });
 })();
+
+// Patch 20260711c - riwayat modal, detail/cetak dokumen, stok responsif, dan baris transfer dinamis
+(() => {
+  const visibleModalSelector = '.history-modal:not([hidden]),.record-modal:not([hidden])';
+  const syncBodyLock = () => document.body.classList.toggle('modal-open', !!document.querySelector(visibleModalSelector));
+  const openModal = (modal) => {
+    if (!modal) return;
+    modal.hidden = false;
+    syncBodyLock();
+    window.setTimeout(() => modal.querySelector('button,input,select')?.focus(), 0);
+  };
+  const closeModal = (modal) => {
+    if (!modal) return;
+    modal.hidden = true;
+    syncBodyLock();
+  };
+  const findByData = (attribute, value) => {
+    const safe = window.CSS && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, '\\$&');
+    return document.querySelector('[' + attribute + '="' + safe + '"]');
+  };
+
+  document.addEventListener('click', (event) => {
+    const historyOpen = event.target.closest('[data-history-open]');
+    if (historyOpen) {
+      event.preventDefault();
+      openModal(findByData('data-history-modal', historyOpen.dataset.historyOpen || ''));
+      return;
+    }
+    const recordOpen = event.target.closest('[data-record-open]');
+    if (recordOpen) {
+      event.preventDefault();
+      openModal(findByData('data-record-modal', recordOpen.dataset.recordOpen || ''));
+      return;
+    }
+    const historyClose = event.target.closest('[data-history-close]');
+    if (historyClose) {
+      event.preventDefault();
+      closeModal(historyClose.closest('[data-history-modal]'));
+      return;
+    }
+    const recordClose = event.target.closest('[data-record-close]');
+    if (recordClose) {
+      event.preventDefault();
+      closeModal(recordClose.closest('[data-record-modal]'));
+      return;
+    }
+    if (event.target.matches('.record-modal')) {
+      closeModal(event.target);
+      return;
+    }
+    if (event.target.matches('.history-modal')) {
+      closeModal(event.target);
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const record = document.querySelector('.record-modal:not([hidden])');
+    if (record) {
+      closeModal(record);
+      return;
+    }
+    const history = document.querySelector('.history-modal:not([hidden])');
+    if (history) closeModal(history);
+  });
+
+  document.querySelectorAll('[data-history-filter]').forEach((form) => {
+    const range = form.querySelector('[data-history-range]');
+    const customFields = form.querySelectorAll('[data-history-custom]');
+    const syncCustom = () => customFields.forEach((field) => { field.hidden = !range || range.value !== 'custom'; });
+    range?.addEventListener('change', syncCustom);
+    syncCustom();
+  });
+
+  document.querySelectorAll('[data-history-modal][data-auto-open="1"]').forEach(openModal);
+  document.querySelectorAll('[data-record-modal][data-auto-open="1"]').forEach(openModal);
+  window.addEventListener('pageshow', syncBodyLock);
+
+  document.addEventListener('click', (event) => {
+    const printButton = event.target.closest('[data-print-target]');
+    if (!printButton) return;
+    event.preventDefault();
+    const id = printButton.dataset.printTarget || '';
+    const report = findByData('data-print-report', id);
+    if (!report) return;
+    document.querySelectorAll('.record-report.is-printing').forEach((el) => el.classList.remove('is-printing'));
+    report.classList.add('is-printing');
+    document.body.classList.add('print-record-report');
+    const cleanup = () => {
+      document.body.classList.remove('print-record-report');
+      report.classList.remove('is-printing');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
+    window.setTimeout(cleanup, 1500);
+  });
+
+  const transferForm = document.querySelector('[data-transfer-form]');
+  if (transferForm) {
+    const rows = transferForm.querySelector('[data-transfer-rows]');
+    const template = transferForm.querySelector('[data-transfer-row-template]');
+    const addButton = transferForm.querySelector('[data-transfer-add]');
+    const syncRow = (row) => {
+      const select = row?.querySelector('[data-transfer-item]');
+      const price = row?.querySelector('[data-transfer-price]');
+      const stockCell = row?.querySelector('[data-transfer-stock]');
+      const option = select?.selectedOptions?.[0];
+      if (!select || !option) return;
+      if (!select.value) {
+        if (stockCell) stockCell.textContent = 'Pilih item';
+        return;
+      }
+      const stock = option.dataset.stock || '0';
+      const unit = option.dataset.unit || '';
+      if (stockCell) stockCell.textContent = stock + (unit ? ' ' + unit : '');
+      if (price && price.value === '') price.value = option.dataset.price || '0';
+    };
+    addButton?.addEventListener('click', () => {
+      if (!rows || !template) return;
+      rows.appendChild(template.content.cloneNode(true));
+      rows.lastElementChild?.querySelector('select')?.focus();
+    });
+    rows?.addEventListener('click', (event) => {
+      const remove = event.target.closest('[data-transfer-remove]');
+      if (!remove) return;
+      const row = remove.closest('[data-transfer-row]');
+      row?.remove();
+      if (rows.children.length === 0 && template) rows.appendChild(template.content.cloneNode(true));
+    });
+    rows?.addEventListener('change', (event) => {
+      if (!event.target.matches('[data-transfer-item]')) return;
+      const row = event.target.closest('[data-transfer-row]');
+      const price = row?.querySelector('[data-transfer-price]');
+      if (price) price.value = '';
+      syncRow(row);
+    });
+    rows?.querySelectorAll('[data-transfer-row]').forEach(syncRow);
+  }
+
+  const stockSearch = document.querySelector('[data-stock-search]');
+  if (stockSearch) {
+    const rows = Array.from(document.querySelectorAll('[data-stock-row]'));
+    const filter = () => {
+      const query = (stockSearch.value || '').toLowerCase().trim();
+      rows.forEach((row) => { row.hidden = !!query && !(row.dataset.search || '').includes(query); });
+    };
+    stockSearch.addEventListener('input', filter);
+  }
+})();
