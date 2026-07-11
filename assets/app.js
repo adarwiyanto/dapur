@@ -338,3 +338,41 @@ document.addEventListener('submit', async e => {
     }
   });
 })();
+
+// Patch 20260711b - modal detail pegawai dan baris input kegiatan dinamis
+(() => {
+  const modal = document.querySelector('[data-employee-modal]');
+  if (modal) {
+    const closeUrl = new URL(window.location.href);
+    closeUrl.searchParams.delete('detail_employee');
+    closeUrl.searchParams.delete('from');
+    closeUrl.searchParams.delete('to');
+    const closeModal = () => { window.location.href = closeUrl.toString(); };
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeModal();
+    });
+  }
+
+  const form = document.querySelector('[data-bulk-activity-form]');
+  if (!form) return;
+  const rows = form.querySelector('[data-activity-rows]');
+  const template = form.querySelector('[data-activity-row-template]');
+  const addButton = form.querySelector('[data-add-activity-row]');
+  if (!rows || !template || !addButton) return;
+
+  addButton.addEventListener('click', () => {
+    rows.appendChild(template.content.cloneNode(true));
+    const added = rows.lastElementChild;
+    if (added) added.querySelector('select')?.focus();
+  });
+
+  rows.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove-activity-row]');
+    if (!button) return;
+    const row = button.closest('[data-activity-row]');
+    if (row) row.remove();
+  });
+})();

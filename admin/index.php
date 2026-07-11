@@ -6,12 +6,27 @@ header('Expires: 0');
 ob_start(); // patch: keep AJAX JSON clean even when admin shell is buffered
 $u=current_user(); $page=$_GET['page']??'dashboard';
 $menus=[
- 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian','🛒','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'hope_connection'=>['Koneksi ke HOPe','🔗','api'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
+ 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian','🛒','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'hope_connection'=>['Koneksi ke HOPe','🔗','api'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'company_settings'=>['Edit Perusahaan','🏢','users'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
 ];
 if(!isset($menus[$page])) $page='dashboard'; require_perm($menus[$page][2]); if(($menus[$page][3]??'')==='owner' && !is_owner()){ http_response_code(403); die('Akses ditolak.'); }
 function h2($t){echo '<h2>'.e($t).'</h2>';}
 function next_no($prefix,$table,$field){return $prefix.'-'.date('Ymd').'-'.str_pad((string)(((int)(db()->query("SELECT COUNT(*) FROM $table")->fetchColumn()))+1),4,'0',STR_PAD_LEFT);} 
 function postval($k,$d=''){return trim((string)($_POST[$k]??$d));}
+function company_logo_url(): string {
+ $custom=trim((string)setting('company_logo',''));
+ if($custom!=='' && preg_match('/^[A-Za-z0-9._-]+$/',$custom) && is_file(__DIR__.'/../storage/'.$custom)) return '../storage/'.rawurlencode($custom);
+ return '../assets/adena-default.jpg';
+}
+function company_info(): array {
+ return [
+  'name'=>(string)setting('company_name','Dapur Adena'),
+  'branch'=>(string)setting('company_branch',''),
+  'address'=>(string)setting('company_address',''),
+  'phone'=>(string)setting('company_phone',''),
+  'email'=>(string)setting('company_email',''),
+  'extra'=>(string)setting('company_extra',''),
+ ];
+}
 function dapur_role_label(string $roleKey): string {
  $roleKey=strtolower(trim($roleKey));
  return match($roleKey){
@@ -227,13 +242,13 @@ normalize_dapur_roles_runtime();
 ensure_dapur_employee_role_column();
 ensure_hope_transfer_schema();
 $pairNotif=pairing_pending_rows(8); $pairNotifCount=count($pairNotif);
-?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css?v=20260702api"><script src="../assets/app.js?v=20260623f" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php
+?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css?v=20260711b"><script src="../assets/app.js?v=20260711b" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php
 $navGroups=[
  ['label'=>'Utama','items'=>['dashboard','raw','purchases','production','stock','stock_opname','sales','remuneration']],
  ['label'=>'Produk Jadi','items'=>['finished','finished_hidden']],
  ['label'=>'BOM','items'=>['bom','bom_hidden']],
  ['label'=>'Kegiatan Pegawai','items'=>['activities','activity_types']],
- ['label'=>'Admin','items'=>['users','hope_connection','api_integrations','error_log','owner_permissions']],
+ ['label'=>'Admin','items'=>['users','company_settings','hope_connection','api_integrations','error_log','owner_permissions']],
 ];
 foreach($navGroups as $grp){
  $visible=[]; foreach($grp['items'] as $k){ if(!isset($menus[$k])) continue; $m=$menus[$k]; if(($m[3]??'')==='owner' && !is_owner()) continue; if(can($m[2])) $visible[]=$k; }
@@ -590,21 +605,48 @@ elseif($page==='activity_types'){
 }
 elseif($page==='activities'){
  if($_SERVER['REQUEST_METHOD']==='POST'){
-  if(($_POST['act']??'')==='emp'){ ensure_dapur_employee_role_column(); $rk=postval('role_key','pegawai_dapur'); if(!in_array($rk,['owner','admin_dapur','manager_dapur','pegawai_dapur'],true)) $rk='pegawai_dapur'; execq('INSERT INTO employees(employee_name,phone,role_key,is_active) VALUES(?,?,?,1)',[postval('employee_name'),postval('phone'),$rk]); flash('Pegawai disimpan.'); redirect('?page=activities');}
-  if(($_POST['act']??'')==='delete_emp'){ $eid=(int)($_POST['employee_id']??0); if($eid>0){ execq('UPDATE employees SET is_active=0 WHERE id=?',[$eid]); flash('Pegawai dihapus dari daftar aktif.'); } redirect('?page=activities'); }
-  if(($_POST['act']??'')==='type'){execq('INSERT INTO activity_types(activity_name,category,unit_name,point_weight,is_active) VALUES(?,?,?,?,1)',[postval('activity_name'),postval('category'),postval('unit_name','kegiatan'),(float)postval('point_weight','1')]); flash('Jenis kegiatan disimpan.'); redirect('?page=activity_types');}
-  $at=one('SELECT * FROM activity_types WHERE id=? AND is_active=1',[(int)$_POST['activity_type_id']]);
-  if(!$at){ flash('Jenis kegiatan tidak valid atau nonaktif.','err'); redirect('?page=activities'); }
-  $qty=(float)postval('qty','1'); $w=(float)$at['point_weight'];
-  execq('INSERT INTO employee_activities(activity_date,employee_id,activity_type_id,qty,point_weight,total_points,notes,created_by) VALUES(?,?,?,?,?,?,?,?)',[postval('activity_date',date('Y-m-d')),(int)$_POST['employee_id'],(int)$at['id'],$qty,$w,$qty*$w,postval('notes'),(int)($u['id']??0)]);
-  flash('Kegiatan pegawai dicatat.'); redirect('?page=activities');
+  $act=(string)($_POST['act']??'');
+  if($act==='emp'){ ensure_dapur_employee_role_column(); $rk=postval('role_key','pegawai_dapur'); if(!in_array($rk,['owner','admin_dapur','manager_dapur','pegawai_dapur'],true)) $rk='pegawai_dapur'; execq('INSERT INTO employees(employee_name,phone,role_key,is_active) VALUES(?,?,?,1)',[postval('employee_name'),postval('phone'),$rk]); flash('Pegawai disimpan.'); redirect('?page=activities');}
+  if($act==='delete_emp'){ $eid=(int)($_POST['employee_id']??0); if($eid>0){ execq('UPDATE employees SET is_active=0 WHERE id=?',[$eid]); flash('Pegawai dihapus dari daftar aktif.'); } redirect('?page=activities'); }
+  if($act==='type'){execq('INSERT INTO activity_types(activity_name,category,unit_name,point_weight,is_active) VALUES(?,?,?,?,1)',[postval('activity_name'),postval('category'),postval('unit_name','kegiatan'),(float)postval('point_weight','1')]); flash('Jenis kegiatan disimpan.'); redirect('?page=activity_types');}
+  if($act==='bulk_activity'){
+   $activityDate=postval('activity_date',date('Y-m-d'));
+   $employeeId=(int)($_POST['employee_id']??0);
+   $dateValid=(bool)preg_match('/^\d{4}-\d{2}-\d{2}$/',$activityDate);
+   $employee=$employeeId>0?one('SELECT id FROM employees WHERE id=? AND is_active=1',[$employeeId]):null;
+   $typeIds=is_array($_POST['activity_type_id']??null)?$_POST['activity_type_id']:[];
+   $qtys=is_array($_POST['qty']??null)?$_POST['qty']:[];
+   $notes=is_array($_POST['notes']??null)?$_POST['notes']:[];
+   if(!$dateValid || !$employee){ flash('Tanggal atau pegawai tidak valid.','err'); redirect('?page=activities'); }
+   $rows=[];
+   foreach($typeIds as $i=>$rawType){
+    $typeId=(int)$rawType;
+    if($typeId<=0) continue;
+    $at=one('SELECT id,point_weight FROM activity_types WHERE id=? AND is_active=1',[$typeId]);
+    if(!$at){ flash('Ada jenis kegiatan yang tidak valid atau sudah nonaktif.','err'); redirect('?page=activities'); }
+    $qty=(float)($qtys[$i]??1);
+    if($qty<=0){ flash('Jumlah kegiatan harus lebih dari nol.','err'); redirect('?page=activities'); }
+    $weight=(float)$at['point_weight'];
+    $rows[]=[$activityDate,$employeeId,(int)$at['id'],$qty,$weight,$qty*$weight,trim((string)($notes[$i]??'')),(int)($u['id']??0)];
+   }
+   if(!$rows){ flash('Pilih minimal satu kegiatan untuk dicatat.','err'); redirect('?page=activities'); }
+   $pdo=db();
+   try{
+    $pdo->beginTransaction();
+    $st=$pdo->prepare('INSERT INTO employee_activities(activity_date,employee_id,activity_type_id,qty,point_weight,total_points,notes,created_by) VALUES(?,?,?,?,?,?,?,?)');
+    foreach($rows as $row) $st->execute($row);
+    $pdo->commit();
+    flash(count($rows).' kegiatan pegawai berhasil dicatat.');
+   }catch(Throwable $e){ if($pdo->inTransaction()) $pdo->rollBack(); flash('Kegiatan gagal disimpan. Tidak ada data parsial yang dicatat.','err'); }
+   redirect('?page=activities');
+  }
  }
  h2('Kegiatan Pegawai & Bobot Poin');
  echo '<h3>Tambah Pegawai</h3><form method="post" class="actions">'.csrf_field().'<input type="hidden" name="act" value="emp"><input name="employee_name" placeholder="Nama pegawai" required><input name="phone" placeholder="HP"><select name="role_key"><option value="pegawai_dapur">Pegawai Dapur</option><option value="manager_dapur">Manajer Dapur</option><option value="admin_dapur">Admin Dapur</option><option value="owner">Owner</option></select><button class="btn light">Simpan Pegawai</button></form>';
  echo '<div class="actions"><a class="btn light" href="?page=activity_types">Daftar / Edit Kegiatan Pegawai</a></div>';
  $ym=preg_match('/^\d{4}-\d{2}$/',(string)($_GET['month']??''))?$_GET['month']:date('Y-m'); $start=$ym.'-01'; $end=date('Y-m-t',strtotime($start));
  echo '<h3>Total Poin Bulanan Pegawai</h3><form method="get" class="actions no-print"><input type="hidden" name="page" value="activities"><label>Bulan<input type="month" name="month" value="'.e($ym).'"></label><button class="btn light">Filter</button></form>';
- echo '<table><tr><th>Pegawai</th><th>Role</th><th>Total Poin</th><th>Jumlah Aktivitas</th><th>Aksi</th></tr>'; foreach(all('SELECT e.id,e.employee_name,COALESCE(e.role_key,\'pegawai_dapur\') role_key,COALESCE(SUM(ea.total_points),0) total_points,COUNT(ea.id) activity_count FROM employees e LEFT JOIN employee_activities ea ON ea.employee_id=e.id AND ea.activity_date BETWEEN ? AND ? WHERE e.is_active=1 GROUP BY e.id,e.employee_name,e.role_key ORDER BY total_points DESC,e.employee_name',[$start,$end]) as $er){ $detailUrl='?page=activities&detail_employee='.(int)$er['id'].'&from='.e($start).'&to='.e($end); echo '<tr><td>'.e($er['employee_name']).'</td><td>'.e(dapur_role_label((string)($er['role_key']??'pegawai_dapur'))).'</td><td>'.dec($er['total_points']).'</td><td>'.(int)$er['activity_count'].'</td><td><div class="actions mini"><a class="btn light" href="'.$detailUrl.'">Detail</a><form method="post" onsubmit="return confirm(&quot;Hapus pegawai ini dari daftar aktif? Riwayat KPI tetap disimpan.&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete_emp"><input type="hidden" name="employee_id" value="'.(int)$er['id'].'"><button class="btn danger">Hapus</button></form></div></td></tr>'; } echo '</table>';
+ echo '<table><tr><th>Pegawai</th><th>Role</th><th>Total Poin</th><th>Jumlah Aktivitas</th><th>Aksi</th></tr>'; foreach(all('SELECT e.id,e.employee_name,COALESCE(e.role_key,\'pegawai_dapur\') role_key,COALESCE(SUM(ea.total_points),0) total_points,COUNT(ea.id) activity_count FROM employees e LEFT JOIN employee_activities ea ON ea.employee_id=e.id AND ea.activity_date BETWEEN ? AND ? WHERE e.is_active=1 GROUP BY e.id,e.employee_name,e.role_key ORDER BY total_points DESC,e.employee_name',[$start,$end]) as $er){ $detailUrl='?page=activities&detail_employee='.(int)$er['id'].'&from='.e($start).'&to='.e($end).'&month='.e($ym); echo '<tr><td>'.e($er['employee_name']).'</td><td>'.e(dapur_role_label((string)($er['role_key']??'pegawai_dapur'))).'</td><td>'.dec($er['total_points']).'</td><td>'.(int)$er['activity_count'].'</td><td><div class="actions mini"><a class="btn light" href="'.$detailUrl.'">Detail</a><form method="post" onsubmit="return confirm(&quot;Hapus pegawai ini dari daftar aktif? Riwayat KPI tetap disimpan.&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete_emp"><input type="hidden" name="employee_id" value="'.(int)$er['id'].'"><button class="btn danger">Hapus</button></form></div></td></tr>'; } echo '</table>';
  $detailEmployeeId=(int)($_GET['detail_employee']??0);
  if($detailEmployeeId>0){
   $detailEmployee=one('SELECT id,employee_name,COALESCE(role_key,\'pegawai_dapur\') role_key FROM employees WHERE id=?',[$detailEmployeeId]);
@@ -615,25 +657,53 @@ elseif($page==='activities'){
   if($detailEmployee){
    $detailRows=all('SELECT ea.activity_date,ea.qty,ea.point_weight,ea.total_points,ea.notes,a.activity_name,a.category,a.unit_name FROM employee_activities ea JOIN activity_types a ON a.id=ea.activity_type_id WHERE ea.employee_id=? AND ea.activity_date BETWEEN ? AND ? ORDER BY ea.activity_date ASC,ea.id ASC',[$detailEmployeeId,$detailFrom,$detailTo]);
    $detailTotal=0.0; foreach($detailRows as $dr) $detailTotal+=(float)$dr['total_points'];
-   $base='?page=activities&detail_employee='.$detailEmployeeId;
-   $month1Start=date('Y-m-01'); $month1End=date('Y-m-t');
-   $month2Start=date('Y-m-01',strtotime('-1 month')); $month3Start=date('Y-m-01',strtotime('-2 months'));
-   echo '<section class="employee-report"><div class="report-toolbar no-print"><a class="btn light" href="?page=activities&month='.e($ym).'">Kembali</a><a class="btn light" href="'.$base.'&from='.$month1Start.'&to='.$month1End.'">Bulan Ini</a><a class="btn light" href="'.$base.'&from='.$month2Start.'&to='.$month1End.'">2 Bulan</a><a class="btn light" href="'.$base.'&from='.$month3Start.'&to='.$month1End.'">3 Bulan</a><button type="button" class="btn" onclick="document.body.classList.add(\'print-employee-report\');window.print()">Print / Simpan PDF</button></div>';
-   echo '<form method="get" class="actions report-filter no-print"><input type="hidden" name="page" value="activities"><input type="hidden" name="detail_employee" value="'.$detailEmployeeId.'"><label>Dari<input type="date" name="from" value="'.e($detailFrom).'"></label><label>Sampai<input type="date" name="to" value="'.e($detailTo).'"></label><button class="btn light">Terapkan</button></form>';
-   echo '<div class="report-letterhead"><div class="adena-logo-mark">A</div><div><div class="adena-logo-text">ADENA</div><div class="muted">Dapur Adena</div></div></div><h2 class="report-title">Detail Total Poin Bulanan Pegawai</h2>';
+   $base='?page=activities&detail_employee='.$detailEmployeeId.'&month='.rawurlencode($ym);
+   $month1Start=date('Y-m-01'); $month1End=date('Y-m-t'); $month2Start=date('Y-m-01',strtotime('-1 month')); $month3Start=date('Y-m-01',strtotime('-2 months'));
+   $ci=company_info();
+   echo '<div class="employee-modal-backdrop" data-employee-modal><section class="employee-modal-card" role="dialog" aria-modal="true" aria-label="Detail kegiatan pegawai"><div class="employee-modal-head no-print"><strong>Detail Kegiatan Pegawai</strong><a class="employee-modal-close" href="?page=activities&month='.e($ym).'" aria-label="Tutup">×</a></div><div class="employee-modal-scroll">';
+   echo '<section class="employee-report"><div class="report-toolbar no-print"><a class="btn light" href="'.$base.'&from='.$month1Start.'&to='.$month1End.'">Bulan Ini</a><a class="btn light" href="'.$base.'&from='.$month2Start.'&to='.$month1End.'">2 Bulan</a><a class="btn light" href="'.$base.'&from='.$month3Start.'&to='.$month1End.'">3 Bulan</a><button type="button" class="btn" onclick="document.body.classList.add(\'print-employee-report\');window.print()">Print / Simpan PDF</button><a class="btn light" href="?page=activities&month='.e($ym).'">Tutup</a></div>';
+   echo '<form method="get" class="actions report-filter no-print"><input type="hidden" name="page" value="activities"><input type="hidden" name="detail_employee" value="'.$detailEmployeeId.'"><input type="hidden" name="month" value="'.e($ym).'"><label>Dari<input type="date" name="from" value="'.e($detailFrom).'"></label><label>Sampai<input type="date" name="to" value="'.e($detailTo).'"></label><button class="btn light">Terapkan</button></form>';
+   echo '<div class="report-letterhead"><img class="company-report-logo" src="'.e(company_logo_url()).'" alt="Logo"><div><div class="adena-logo-text">'.e($ci['name']).'</div>'.($ci['branch']!==''?'<div><strong>'.e($ci['branch']).'</strong></div>':'').'<div class="muted">'.e($ci['address']).'</div><div class="muted small">'.e(trim($ci['phone'].($ci['phone']!==''&&$ci['email']!==''?' • ':'').$ci['email'])).'</div></div></div><h2 class="report-title">Detail Total Poin Bulanan Pegawai</h2>';
    echo '<div class="report-meta"><div><span>Nama Pegawai</span><strong>'.e($detailEmployee['employee_name']).'</strong></div><div><span>Jabatan</span><strong>'.e(dapur_role_label((string)$detailEmployee['role_key'])).'</strong></div><div><span>Periode</span><strong>'.e(date('d-m-Y',strtotime($detailFrom)).' s.d. '.date('d-m-Y',strtotime($detailTo))).'</strong></div><div><span>Total Poin</span><strong>'.dec($detailTotal).'</strong></div><div><span>Jumlah Aktivitas</span><strong>'.count($detailRows).'</strong></div></div>';
    echo '<table class="employee-detail-table"><tr><th>No.</th><th>Tanggal</th><th>Kegiatan</th><th>Kategori</th><th>Qty</th><th>Satuan</th><th>Bobot</th><th>Total Poin</th><th>Catatan</th></tr>';
    foreach($detailRows as $i=>$dr){ echo '<tr><td>'.($i+1).'</td><td>'.e(date('d-m-Y',strtotime($dr['activity_date']))).'</td><td>'.e($dr['activity_name']).'</td><td>'.e($dr['category']?:'-').'</td><td>'.dec($dr['qty']).'</td><td>'.e($dr['unit_name']?:'-').'</td><td>'.dec($dr['point_weight']).'</td><td>'.dec($dr['total_points']).'</td><td>'.e($dr['notes']?:'-').'</td></tr>'; }
    if(!$detailRows) echo '<tr><td colspan="9" class="muted">Tidak ada kegiatan pada periode ini.</td></tr>';
-   echo '<tr class="report-total-row"><td colspan="7"><strong>Total</strong></td><td><strong>'.dec($detailTotal).'</strong></td><td></td></tr></table><div class="report-signatures"><div>Mengetahui,<br><br><br><strong>Manajer Dapur</strong></div><div>Diperiksa oleh,<br><br><br><strong>________________</strong></div></div></section>';
+   echo '<tr class="report-total-row"><td colspan="7"><strong>Total</strong></td><td><strong>'.dec($detailTotal).'</strong></td><td></td></tr></table><div class="report-signatures"><div>Mengetahui,<br><br><br><strong>Manajer Dapur</strong></div><div>Diperiksa oleh,<br><br><br><strong>________________</strong></div></div></section></div></section></div>';
   }
  }
- echo '<h3>Input Kegiatan</h3><form method="post" class="form-grid">'.csrf_field().'<p><label>Tanggal<input name="activity_date" type="date" value="'.date('Y-m-d').'"></label></p><p><label>Pegawai<select name="employee_id">'; foreach(all('SELECT * FROM employees WHERE is_active=1 ORDER BY employee_name') as $emp) echo '<option value="'.(int)$emp['id'].'">'.e($emp['employee_name']).'</option>'; echo '</select></label></p><p><label>Kegiatan<select name="activity_type_id">'; foreach(all('SELECT * FROM activity_types WHERE is_active=1 ORDER BY activity_name') as $a) echo '<option value="'.(int)$a['id'].'">'.e($a['activity_name'].' ('.$a['point_weight'].')').'</option>'; echo '</select></label></p><p><label>Qty<input name="qty" type="number" step="0.0001" value="1"></label></p><p><label>Catatan<input name="notes"></label></p><p><button class="btn">Catat</button></p></form>';
- echo '<table><tr><th>Tanggal</th><th>Pegawai</th><th>Kegiatan</th><th>Poin</th></tr>'; foreach(all('SELECT ea.*,e.employee_name,a.activity_name FROM employee_activities ea JOIN employees e ON e.id=ea.employee_id JOIN activity_types a ON a.id=ea.activity_type_id ORDER BY ea.id DESC LIMIT 40') as $r) echo '<tr><td>'.e($r['activity_date']).'</td><td>'.e($r['employee_name']).'</td><td>'.e($r['activity_name']).'</td><td>'.dec($r['total_points']).'</td></tr>'; echo '</table>';
+ $activityOptions='<option value="">— Pilih kegiatan —</option>'; foreach(all('SELECT id,activity_name,point_weight FROM activity_types WHERE is_active=1 ORDER BY activity_name') as $a) $activityOptions.='<option value="'.(int)$a['id'].'">'.e($a['activity_name'].' ('.$a['point_weight'].' poin)').'</option>';
+ echo '<h3>Input Kegiatan</h3><form method="post" class="bulk-activity-form" data-bulk-activity-form>'.csrf_field().'<input type="hidden" name="act" value="bulk_activity"><div class="bulk-activity-header"><label>Tanggal<input name="activity_date" type="date" value="'.date('Y-m-d').'" required></label><label>Pegawai<select name="employee_id" required><option value="">— Pilih pegawai —</option>'; foreach(all('SELECT * FROM employees WHERE is_active=1 ORDER BY employee_name') as $emp) echo '<option value="'.(int)$emp['id'].'">'.e($emp['employee_name']).'</option>'; echo '</select></label></div><div class="bulk-activity-table"><div class="bulk-activity-row bulk-activity-labels"><span>Kegiatan</span><span>Qty</span><span>Catatan</span><span>Aksi</span></div><div data-activity-rows>';
+ for($i=0;$i<4;$i++) echo '<div class="bulk-activity-row" data-activity-row><select name="activity_type_id[]">'.$activityOptions.'</select><input name="qty[]" type="number" min="0.0001" step="0.0001" value="1"><input name="notes[]" placeholder="Catatan (opsional)"><button type="button" class="btn light" data-remove-activity-row>Hapus</button></div>';
+ echo '</div></div><template data-activity-row-template><div class="bulk-activity-row" data-activity-row><select name="activity_type_id[]">'.$activityOptions.'</select><input name="qty[]" type="number" min="0.0001" step="0.0001" value="1"><input name="notes[]" placeholder="Catatan (opsional)"><button type="button" class="btn light" data-remove-activity-row>Hapus</button></div></template><div class="actions"><button type="button" class="btn light" data-add-activity-row>+ Tambah Kegiatan</button><button class="btn" type="submit">Catat Semua Kegiatan</button></div></form>';
 }
 elseif($page==='remuneration'){
  if($_SERVER['REQUEST_METHOD']==='POST'){ $name=postval('period_name');$start=postval('start_date');$end=postval('end_date');$fund=(float)postval('total_fund','0'); execq('INSERT INTO remuneration_periods(period_name,start_date,end_date,total_fund,status) VALUES(?,?,?,?,?)',[$name,$start,$end,$fund,'draft']); $pid=(int)db()->lastInsertId(); $rows=all('SELECT employee_id,SUM(total_points) pts FROM employee_activities WHERE activity_date BETWEEN ? AND ? GROUP BY employee_id',[$start,$end]); $total=array_sum(array_map(fn($r)=>(float)$r['pts'],$rows)); foreach($rows as $r){$pct=$total>0?(float)$r['pts']/$total:0; execq('INSERT INTO remuneration_items(period_id,employee_id,total_points,point_percent,amount) VALUES(?,?,?,?,?)',[$pid,(int)$r['employee_id'],(float)$r['pts'],$pct,$pct*$fund]);} flash('Perhitungan remunerasi dibuat.'); redirect('?page=remuneration'); }
  h2('Remunerasi'); echo '<form method="post" class="form-grid">'.csrf_field().'<p><label>Nama Periode<input name="period_name" value="Remun '.date('M Y').'"></label></p><p><label>Awal<input name="start_date" type="date" required></label></p><p><label>Akhir<input name="end_date" type="date" required></label></p><p><label>Total Dana<input name="total_fund" type="number"></label></p><p><button class="btn">Hitung</button></p></form>'; foreach(all('SELECT * FROM remuneration_periods ORDER BY id DESC LIMIT 10') as $p){echo '<h3>'.e($p['period_name']).' <span class="muted">'.e($p['start_date'].' s.d. '.$p['end_date']).'</span></h3><table><tr><th>Pegawai</th><th>Poin</th><th>%</th><th>Nominal</th></tr>'; foreach(all('SELECT ri.*,e.employee_name FROM remuneration_items ri JOIN employees e ON e.id=ri.employee_id WHERE period_id=? ORDER BY amount DESC',[(int)$p['id']]) as $r) echo '<tr><td>'.e($r['employee_name']).'</td><td>'.dec($r['total_points']).'</td><td>'.number_format((float)$r['point_percent']*100,2).'%</td><td>'.rupiah($r['amount']).'</td></tr>'; echo '</table>'; }
+}
+elseif($page==='company_settings'){
+ if($_SERVER['REQUEST_METHOD']==='POST'){
+  $act=(string)($_POST['act']??'save_company');
+  if($act==='restore_logo'){
+   $old=trim((string)setting('company_logo',''));
+   if($old!=='' && preg_match('/^company-logo-[A-Za-z0-9._-]+$/',$old) && is_file(__DIR__.'/../storage/'.$old)) @unlink(__DIR__.'/../storage/'.$old);
+   set_setting('company_logo',''); flash('Logo dikembalikan ke logo bawaan Adena.'); redirect('?page=company_settings');
+  }
+  foreach(['company_name','company_branch','company_address','company_phone','company_email','company_extra'] as $key) set_setting($key,postval($key));
+  if(isset($_FILES['company_logo']) && (int)($_FILES['company_logo']['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_NO_FILE){
+   $file=$_FILES['company_logo'];
+   if((int)$file['error']!==UPLOAD_ERR_OK) { flash('Upload logo gagal.','err'); redirect('?page=company_settings'); }
+   if((int)$file['size']>2*1024*1024) { flash('Ukuran logo maksimal 2 MB.','err'); redirect('?page=company_settings'); }
+   $finfo=new finfo(FILEINFO_MIME_TYPE); $mime=(string)$finfo->file($file['tmp_name']); $ext=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp'][$mime]??'';
+   if($ext===''){ flash('Logo harus berformat JPG, PNG, atau WEBP.','err'); redirect('?page=company_settings'); }
+   $name='company-logo-'.bin2hex(random_bytes(8)).'.'.$ext; $target=__DIR__.'/../storage/'.$name;
+   if(!move_uploaded_file($file['tmp_name'],$target)){ flash('Logo tidak dapat disimpan. Periksa izin folder storage.','err'); redirect('?page=company_settings'); }
+   $old=trim((string)setting('company_logo','')); set_setting('company_logo',$name);
+   if($old!=='' && $old!==$name && preg_match('/^company-logo-[A-Za-z0-9._-]+$/',$old) && is_file(__DIR__.'/../storage/'.$old)) @unlink(__DIR__.'/../storage/'.$old);
+  }
+  flash('Data perusahaan berhasil diperbarui.'); redirect('?page=company_settings');
+ }
+ $ci=company_info(); h2('Edit Perusahaan');
+ echo '<p class="muted">Data ini dipakai untuk identitas Dapur Adena dan kop laporan kegiatan pegawai. Logo bawaan Adena tetap tersedia dan dapat dipulihkan kapan saja.</p><div class="company-settings-grid"><div><form method="post" enctype="multipart/form-data" class="form-grid compact-form">'.csrf_field().'<input type="hidden" name="act" value="save_company"><p><label>Nama Perusahaan<input name="company_name" value="'.e($ci['name']).'" required></label></p><p><label>Nama Cabang / Toko<input name="company_branch" value="'.e($ci['branch']).'"></label></p><p class="wide"><label>Alamat<textarea name="company_address" rows="3">'.e($ci['address']).'</textarea></label></p><p><label>Nomor Telepon<input name="company_phone" value="'.e($ci['phone']).'"></label></p><p><label>Email<input name="company_email" type="email" value="'.e($ci['email']).'"></label></p><p class="wide"><label>Informasi Tambahan<textarea name="company_extra" rows="3">'.e($ci['extra']).'</textarea></label></p><p class="wide"><label>Ganti Logo<input name="company_logo" type="file" accept="image/jpeg,image/png,image/webp"><small class="muted">JPG, PNG, atau WEBP. Maksimal 2 MB.</small></label></p><p><button class="btn">Simpan Perusahaan</button></p></form></div><div class="company-logo-preview"><span class="muted">Logo aktif</span><img src="'.e(company_logo_url()).'" alt="Logo perusahaan"><form method="post">'.csrf_field().'<input type="hidden" name="act" value="restore_logo"><button class="btn light" type="submit">Kembalikan Logo Bawaan Adena</button></form></div></div>';
 }
 elseif($page==='users'){
  if($_SERVER['REQUEST_METHOD']==='POST'){ $hash=password_hash(postval('password'),PASSWORD_DEFAULT); execq('INSERT INTO users(username,name,email,password_hash,role_id,is_active) VALUES(?,?,?,?,?,1)',[postval('username'),postval('name'),postval('email'),$hash,(int)$_POST['role_id']]); flash('User dibuat.'); redirect('?page=users'); }
