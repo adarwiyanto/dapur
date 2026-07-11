@@ -1164,3 +1164,19 @@ input,select,textarea{border-color:var(--border)!important;background:#fff!impor
 .finished-products-table .actions form{
   align-items: center;
 }
+
+/* Patch 20260711 - detail poin pegawai + cetak */
+.employee-report{margin-top:22px;padding:20px;border:1px solid var(--border);border-radius:16px;background:#fff}
+.report-toolbar,.report-filter{margin-bottom:12px}.report-letterhead{display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:2px solid var(--primary)}
+.adena-logo-mark{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--primary-2));color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900}
+.adena-logo-text{font-size:22px;line-height:1;font-weight:900;letter-spacing:2px;color:var(--primary-2)}.report-title{text-align:center;margin:18px 0}
+.report-meta{display:grid;grid-template-columns:repeat(5,minmax(130px,1fr));gap:10px;margin-bottom:16px}.report-meta>div{border:1px solid var(--border);border-radius:10px;padding:10px;background:#f8fafc}.report-meta span{display:block;font-size:11px;color:#64748b;margin-bottom:4px}.report-meta strong{display:block;font-size:14px}
+.employee-detail-table{width:100%!important}.employee-detail-table th,.employee-detail-table td{font-size:12px;vertical-align:top}.report-total-row td{background:#f8fafc}.report-signatures{display:flex;justify-content:space-between;text-align:center;margin-top:42px;padding:0 40px;gap:40px}
+@media(max-width:980px){.report-meta{grid-template-columns:repeat(2,minmax(130px,1fr))}.employee-report{overflow-x:auto}}
+@media print{
+  @page{size:A4 landscape;margin:12mm}
+  body{background:#fff!important}.sidebar,.topbar,.notice,.no-print,.global-loading{display:none!important}.app-shell>.main{padding:0!important}.main>.card{border:0!important;box-shadow:none!important;padding:0!important}.employee-report{display:block!important;border:0!important;padding:0!important;margin:0!important;overflow:visible!important}.employee-report~*{display:none!important}.employee-detail-table{width:100%!important;border-collapse:collapse!important}.employee-detail-table th,.employee-detail-table td{border:1px solid #cbd5e1!important;padding:6px!important;font-size:10px!important}.report-meta{grid-template-columns:repeat(5,1fr)!important}.report-signatures{page-break-inside:avoid}.adena-logo-mark{-webkit-print-color-adjust:exact;print-color-adjust:exact}.report-letterhead{border-bottom:2px solid #0a5ea7}
+}
+@media print{
+  body.print-employee-report .main>.card>*:not(.employee-report){display:none!important}
+}

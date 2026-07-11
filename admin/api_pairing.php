@@ -6,7 +6,7 @@ require_once __DIR__ . '/../core/api_pairing.php';
 require_login(); ensure_api_pairing_schema();
 $u=current_user(); $customCss=''; $pending=pairing_pending_count(); $notes=pairing_latest_notifications();
 $msg=$_GET['msg']??''; $hiddenStatuses="'revoked','deleted','cancelled','canceled','rejected','inactive'";
-$incoming=db()->query("SELECT * FROM api_pairing_requests WHERE direction='incoming' AND LOWER(TRIM(COALESCE(status,''))) NOT IN ($hiddenStatuses) ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
+$incoming=db()->query("SELECT * FROM api_pairing_requests WHERE direction='incoming' AND status='pending' ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
 $outgoing=db()->query("SELECT * FROM api_pairing_requests WHERE direction='outgoing' AND LOWER(TRIM(COALESCE(status,''))) NOT IN ($hiddenStatuses) ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
 $conns=db()->query("SELECT * FROM api_connections WHERE LOWER(TRIM(COALESCE(status,''))) NOT IN ($hiddenStatuses) ORDER BY id DESC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
 function status_badge($s){ $c=$s==='approved'||$s==='active'||$s==='ok'?'ok':($s==='pending'?'warn':'danger'); return '<span class="badge '.$c.'">'.e((string)$s).'</span>'; }
