@@ -110,12 +110,22 @@ try{
  }
  if($act==='test_connection'){
    $id=(int)($_POST['id']??0); $st=db()->prepare("SELECT * FROM api_connections WHERE id=? AND status='active'"); $st->execute([$id]); $c=$st->fetch(PDO::FETCH_ASSOC); if(!$c) throw new RuntimeException('Koneksi tidak ditemukan.');
-   $token=dapur_remote_token($c); if($token==='') throw new RuntimeException('Koneksi ini tidak punya token keluar untuk test remote.');
-   $res=pairing_remote_json($c['remote_base_url'],'api/pairing/test.php',[],'GET',$token); $ok=!empty($res['ok']); $msg=(string)($res['message']??$res['_error']??'');
+   $token=dapur_remote_token($c); if($token==='') throw new RuntimeException('Koneksi ini tidak mempunyai token untuk pengujian API.');
+
+   // Back Office adalah konsumen API Dapur. Karena itu pengujian harus diarahkan
+   // ke endpoint inbound milik Dapur, bukan ke endpoint yang diasumsikan ada di Back Office.
+   $type=dapur_api_type_key($c);
+   $targetBase=$type==='backoffice' ? pairing_normalize_url((string)(app_config()['app']['base_url']??'')) : (string)$c['remote_base_url'];
+   $endpoint=$type==='backoffice' ? 'api/backoffice/health.php' : 'api/pairing/test.php';
+   if($targetBase==='') throw new RuntimeException('Base URL untuk pengujian koneksi belum dikonfigurasi.');
+
+   $res=pairing_remote_json($targetBase,$endpoint,[],'GET',$token); $ok=!empty($res['ok']);
+   $msg=(string)($res['message']??$res['_error']??'');
+   if($ok && $type==='backoffice') $msg='Koneksi Back Office aktif. Endpoint API Dapur, token, dan scope tervalidasi.';
    db()->prepare('UPDATE api_connections SET last_test_at=NOW(),last_test_status=?,last_test_message=? WHERE id=?')->execute([$ok?'ok':'failed',$msg,$id]);
-   pairing_test_log($id,(string)$c['remote_base_url'],(string)$c['remote_system_type'],'api/pairing/test.php',$ok?'ok':'failed',(int)($res['_http_code']??0),$msg,$res,$uid);
-   pairing_log_event(null,'api/pairing/test.php','out',$ok?'test_connection_ok':'test_connection_failed',$msg,['connection_id'=>$id,'response'=>$res]);
-   go_pair($ok?'Test koneksi berhasil.':'Test koneksi gagal: '.$msg);
+   pairing_test_log($id,$targetBase,(string)$c['remote_system_type'],$endpoint,$ok?'ok':'failed',(int)($res['_http_code']??0),$msg,$res,$uid);
+   pairing_log_event(null,$endpoint,'out',$ok?'test_connection_ok':'test_connection_failed',$msg,['connection_id'=>$id,'target_base_url'=>$targetBase,'response'=>$res]);
+   go_pair($ok?'Test koneksi berhasil: '.$msg:'Test koneksi gagal: '.$msg);
  }
 
  if($act==='test_hope_products'){
@@ -162,11 +172,13 @@ try{
    $token=dapur_remote_token($c); if($token==='') throw new RuntimeException('Token Back Office kosong. Cek status pairing dulu.');
    if(!pairing_scope_allows((string)($c['access_scope']??''),$need)) throw new RuntimeException('Scope koneksi belum cukup untuk '.$label.'. Dibutuhkan '.$need.'. Scope saat ini: '.($c['access_scope']??''));
    $payload=[]; if($act==='test_backoffice_kpi') $payload=['month'=>date('Y-m')];
-   $res=pairing_remote_json((string)$c['remote_base_url'],$endpoint,$payload,$method,$token,15);
+   $dapurBase=pairing_normalize_url((string)(app_config()['app']['base_url']??''));
+   if($dapurBase==='') throw new RuntimeException('Base URL Dapur belum dikonfigurasi.');
+   $res=pairing_remote_json($dapurBase,$endpoint,$payload,$method,$token,15);
    $ok=!empty($res['ok']); $extra=''; if($ok){ if(isset($res['count'])) $extra=' Count: '.(int)$res['count'].'.'; elseif(is_array($res['data']??null)) $extra=' Response data OK.'; }
    $msg=$ok?($label.' berhasil.'.$extra):(string)($res['message']??$res['_error']??($label.' gagal.'));
    db()->prepare('UPDATE api_connections SET last_test_at=NOW(),last_test_status=?,last_test_message=? WHERE id=?')->execute([$ok?'ok':'failed',$msg,$id]);
-   pairing_test_log($id,(string)$c['remote_base_url'],'backoffice',$endpoint,$ok?'ok':'failed',(int)($res['_http_code']??0),$msg,$res,$uid);
+   pairing_test_log($id,$dapurBase,'backoffice',$endpoint,$ok?'ok':'failed',(int)($res['_http_code']??0),$msg,$res,$uid);
    pairing_log_event(null,$endpoint,'out',$ok?'backoffice_test_ok':'backoffice_test_failed',$msg,['connection_id'=>$id,'response'=>$res]);
    go_pair($msg);
  }
