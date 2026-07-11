@@ -6,7 +6,7 @@ header('Expires: 0');
 ob_start(); // patch: keep AJAX JSON clean even when admin shell is buffered
 $u=current_user(); $page=$_GET['page']??'dashboard';
 $menus=[
- 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian','🛒','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'hope_connection'=>['Koneksi ke HOPe','🔗','api'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'company_settings'=>['Edit Perusahaan','🏢','users'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
+ 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian Bahan Baku','🛒','purchases'], 'expenses'=>['Pengeluaran','💸','purchases'], 'payment_requests'=>['Permintaan Pembayaran','🧾','purchases'], 'expense_categories'=>['Setting Pengeluaran','↳','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'hope_connection'=>['Koneksi ke HOPe','🔗','api'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'company_settings'=>['Edit Perusahaan','🏢','users'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
 ];
 if(!isset($menus[$page])) $page='dashboard'; require_perm($menus[$page][2]); if(($menus[$page][3]??'')==='owner' && !is_owner()){ http_response_code(403); die('Akses ditolak.'); }
 function h2($t){echo '<h2>'.e($t).'</h2>';}
@@ -244,7 +244,8 @@ ensure_hope_transfer_schema();
 $pairNotif=pairing_pending_rows(8); $pairNotifCount=count($pairNotif);
 ?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css?v=20260711b"><script src="../assets/app.js?v=20260711b" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php
 $navGroups=[
- ['label'=>'Utama','items'=>['dashboard','raw','purchases','production','stock','stock_opname','sales','remuneration']],
+ ['label'=>'Utama','items'=>['dashboard','raw','production','stock','stock_opname','sales','remuneration']],
+ ['label'=>'Keuangan','items'=>['purchases','expenses','payment_requests','expense_categories']],
  ['label'=>'Produk Jadi','items'=>['finished','finished_hidden']],
  ['label'=>'BOM','items'=>['bom','bom_hidden']],
  ['label'=>'Kegiatan Pegawai','items'=>['activities','activity_types']],
@@ -405,6 +406,7 @@ elseif($page==='purchases'){
  h2('Pembelian Bahan Baku'); $rms=all('SELECT * FROM raw_materials WHERE is_active=1 ORDER BY name'); echo '<form method="post">'.csrf_field().'<div class="form-grid"><p><label>Tanggal<input name="purchase_date" type="date" value="'.date('Y-m-d').'" required></label></p><p><label>Supplier<input name="supplier_name"></label></p><p><label>Catatan<input name="notes"></label></p></div><table><tr><th>Bahan</th><th>Qty</th><th>Unit Cost</th></tr>'; for($i=0;$i<5;$i++){ echo '<tr><td><select name="raw_material_id[]"><option value="">-</option>'; foreach($rms as $rm) echo '<option value="'.(int)$rm['id'].'">'.e($rm['name']).'</option>'; echo '</select></td><td><input name="qty[]" type="number" step="0.0001"></td><td><input name="unit_cost[]" type="number" step="0.01"></td></tr>'; } echo '</table><p><button class="btn">Posting Pembelian</button></p></form>';
  echo '<h3>Riwayat</h3><table><tr><th>No</th><th>Tanggal</th><th>Supplier</th><th>Total</th></tr>'; foreach(all('SELECT * FROM purchase_headers ORDER BY id DESC LIMIT 20') as $r) echo '<tr><td>'.e($r['purchase_no']).'</td><td>'.e($r['purchase_date']).'</td><td>'.e($r['supplier_name']).'</td><td>'.rupiah($r['total_amount']).'</td></tr>'; echo '</table>';
 }
+elseif(in_array($page,['expenses','payment_requests','expense_categories'],true)){ require __DIR__.'/finance_module.php'; }
 elseif($page==='bom'){
  if($_SERVER['REQUEST_METHOD']==='POST'){
   $act=$_POST['act']??'create_bom';
