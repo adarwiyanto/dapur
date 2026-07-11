@@ -143,13 +143,36 @@ try{
    $id=(int)($_POST['id']??0); $st=db()->prepare("SELECT * FROM api_connections WHERE id=? AND status='active' LIMIT 1"); $st->execute([$id]); $c=$st->fetch(PDO::FETCH_ASSOC); if(!$c) throw new RuntimeException('Koneksi tidak ditemukan.');
    $token=dapur_remote_token($c); if($token==='') throw new RuntimeException('Token remote kosong.');
    $type=dapur_api_type_key($c); $desired=$type==='hope'?'dapur_stock_sender':($type==='backoffice'?'admin_rw':'products.read');
+
+   if($type==='backoffice'){
+     // Back Office adalah konsumen API Dapur dan tidak menyediakan endpoint refresh-scope.
+     // Validasi dilakukan terhadap token/hash dan pairing approved yang tersimpan di Dapur.
+     $storedHash=strtolower(trim((string)($c['token_hash']??'')));
+     $actualHash=hash('sha256',$token);
+     if($storedHash==='' || !hash_equals($storedHash,$actualHash)) throw new RuntimeException('Validasi token Back Office gagal. Silakan pairing ulang.');
+
+     $requestCode=trim((string)($c['paired_from_request_code']??''));
+     if($requestCode==='') throw new RuntimeException('Referensi pairing Back Office tidak ditemukan. Silakan pairing ulang.');
+     $rq=db()->prepare("SELECT status,requested_scope,token_hash FROM api_pairing_requests WHERE request_code=? AND direction='incoming' ORDER BY id DESC LIMIT 1");
+     $rq->execute([$requestCode]); $pair=$rq->fetch(PDO::FETCH_ASSOC);
+     if(!$pair || (string)($pair['status']??'')!=='approved') throw new RuntimeException('Pairing Back Office belum berstatus approved.');
+     $pairHash=strtolower(trim((string)($pair['token_hash']??'')));
+     if($pairHash!=='' && !hash_equals($pairHash,$actualHash)) throw new RuntimeException('Token koneksi tidak sesuai dengan token pairing Back Office. Silakan pairing ulang.');
+
+     $newScope='admin_rw'; $msg='Scope Back Office tervalidasi secara lokal: '.$newScope;
+     db()->prepare('UPDATE api_connections SET access_scope=?, last_test_at=NOW(), last_test_status=?, last_test_message=?, updated_at=NOW() WHERE id=?')->execute([$newScope,'ok',$msg,$id]);
+     $res=['ok'=>true,'access_scope'=>$newScope,'message'=>$msg,'_http_code'=>200,'validation'=>'local'];
+     pairing_test_log($id,(string)$c['remote_base_url'],(string)$c['remote_system_type'],'local/backoffice/refresh-scope','ok',200,$msg,$res,$uid);
+     pairing_log_event(null,'local/backoffice/refresh-scope','local','backoffice_scope_validated',$msg,['connection_id'=>$id,'request_code'=>$requestCode]);
+     go_pair('Refresh scope berhasil: '.$newScope);
+   }
+
    $res=pairing_remote_json((string)$c['remote_base_url'],'api/pairing/refresh-scope.php',['desired_scope'=>$desired],'POST',$token,12);
    $ok=!empty($res['ok']); $newScope=(string)($res['access_scope']??$desired); $msg=(string)($res['message']??$res['_error']??'');
    if($ok){ db()->prepare('UPDATE api_connections SET access_scope=?, last_test_at=NOW(), last_test_status=?, last_test_message=?, updated_at=NOW() WHERE id=?')->execute([$newScope,'ok','Scope diperbarui: '.$newScope,$id]); }
    else { db()->prepare('UPDATE api_connections SET last_test_at=NOW(), last_test_status=?, last_test_message=? WHERE id=?')->execute(['failed','Refresh scope gagal: '.$msg,$id]); }
    pairing_test_log($id,(string)$c['remote_base_url'],(string)$c['remote_system_type'],'api/pairing/refresh-scope.php',$ok?'ok':'failed',(int)($res['_http_code']??0),$msg,$res,$uid);
-   pairing_log_event(null,'api/pairing/refresh-scope.php','out',$ok?'scope_refresh_ok':'scope_refresh_failed',$msg,['connection_id'=>$id,'response'=>$res]);
-   go_pair($ok?'Scope koneksi diperbarui menjadi '.$newScope.'.':'Refresh scope gagal: '.$msg);
+   go_pair($ok?'Refresh scope berhasil: '.$newScope:'Refresh scope gagal: '.$msg);
  }
  if($act==='test_hope_transfer'){
    $id=(int)($_POST['id']??0); $st=db()->prepare("SELECT * FROM api_connections WHERE id=? AND status='active' LIMIT 1"); $st->execute([$id]); $c=$st->fetch(PDO::FETCH_ASSOC); if(!$c) throw new RuntimeException('Koneksi HOPe tidak ditemukan.');
