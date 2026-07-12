@@ -6,7 +6,7 @@ header('Expires: 0');
 ob_start(); // patch: keep AJAX JSON clean even when admin shell is buffered
 $u=current_user(); $page=$_GET['page']??'dashboard';
 $menus=[
- 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian Bahan Baku','🛒','purchases'], 'expenses'=>['Pengeluaran','💸','purchases'], 'payment_requests'=>['Permintaan Pembayaran','🧾','purchases'], 'expense_categories'=>['Setting Pengeluaran','↳','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'hope_connection'=>['Koneksi ke HOPe','🔗','api'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'company_settings'=>['Edit Perusahaan','🏢','users'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
+ 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian Bahan Baku','🛒','purchases'], 'expenses'=>['Pengeluaran','💸','purchases'], 'payment_requests'=>['Permintaan Pembayaran','🧾','purchases'], 'expense_categories'=>['Setting Pengeluaran','↳','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'hope_connection'=>['Koneksi ke HOPe','🔗','api'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'company_settings'=>['Edit Perusahaan','🏢','users'], 'backup_settings'=>['Setting Backup Google Drive','☁️','users','owner'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
 ];
 if(!isset($menus[$page])) $page='dashboard'; require_perm($menus[$page][2]); if(($menus[$page][3]??'')==='owner' && !is_owner()){ http_response_code(403); die('Akses ditolak.'); }
 function h2($t){echo '<h2>'.e($t).'</h2>';}
@@ -250,7 +250,7 @@ $navGroups=[
  ['label'=>'Produk Jadi','items'=>['finished','finished_hidden']],
  ['label'=>'BOM','items'=>['bom','bom_hidden']],
  ['label'=>'Kegiatan Pegawai','items'=>['activities','activity_types']],
- ['label'=>'Admin','items'=>['users','company_settings','hope_connection','api_integrations','error_log','owner_permissions']],
+ ['label'=>'Admin','items'=>['users','company_settings','backup_settings','hope_connection','api_integrations','error_log','owner_permissions']],
 ];
 foreach($navGroups as $grp){
  $visible=[]; foreach($grp['items'] as $k){ if(!isset($menus[$k])) continue; $m=$menus[$k]; if(($m[3]??'')==='owner' && !is_owner()) continue; if(can($m[2])) $visible[]=$k; }
@@ -875,6 +875,24 @@ elseif($page==='error_log'){
  echo '</table>';
 }
 
+elseif($page==='backup_settings'){
+ if(!is_owner()){http_response_code(403);die('Akses hanya owner.');}
+ require_once __DIR__.'/../core/backup_adapter.php'; require_once __DIR__.'/backup_ui.php'; $svc=dapur_backup_service(); $msg='';$err='';
+ $relativeCallback=base_url('admin/backup_google_callback.php'); $callback=preg_match('~^https?://~i',$relativeCallback)?$relativeCallback:(((!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost').'/'.ltrim($relativeCallback,'/'));
+ if($_SERVER['REQUEST_METHOD']==='POST'){
+  try{$a=(string)($_POST['backup_action']??'');
+   if($a==='save_config'){$svc->saveConfiguration($_POST);$msg='Konfigurasi backup berhasil disimpan.';}
+   elseif($a==='connect'){$state=bin2hex(random_bytes(24));$_SESSION['backup_oauth_state']=$state;header('Location: '.$svc->authorizationUrl($callback,$state));exit;}
+   elseif($a==='test'){$r=$svc->testConnection();$msg='Koneksi berhasil ke '.($r['email']??'Google Drive').'.';}
+   elseif($a==='disconnect'){$svc->disconnect();$msg='Koneksi Google Drive diputus.';}
+   elseif($a==='download_key'){$site=preg_replace('/[^A-Za-z0-9_-]+/','-',(string)$svc->get('site_code',$svc->appKey()));while(ob_get_level()>0)@ob_end_clean();header('Content-Type: text/plain; charset=utf-8');header('Content-Disposition: attachment; filename="backup-recovery-key-'.$site.'.txt"');echo $svc->recoveryKeyText();exit;}
+   elseif($a==='run'){$r=$svc->runBackup((string)($_POST['backup_type']??'daily'),'owner');$msg='Backup berhasil: '.$r['filename'];}
+  }catch(Throwable $e){$err=$e->getMessage();}
+ }
+ h2('Setting Backup Google Drive'); if($msg!=='')echo '<div class="notice ok">'.e($msg).'</div>';if($err!=='')echo '<div class="notice err">'.e($err).'</div>';
+ $cronCommand='/usr/local/bin/php -q '.escapeshellarg(dirname(__DIR__).'/cron_backup.php').' >/dev/null 2>&1';$relCron=base_url('cron_backup.php?key='.rawurlencode((string)$svc->get('cron_secret','')));$cronUrl=preg_match('~^https?://~i',$relCron)?$relCron:(((!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost').'/'.ltrim($relCron,'/'));
+ backup_render_settings($svc,$callback,$cronCommand,$cronUrl,csrf_field(),'?page=backup_settings');
+}
 elseif($page==='owner_permissions'){
  if(!is_owner()){ http_response_code(403); die('Akses ditolak.'); }
  if($_SERVER['REQUEST_METHOD']==='POST'){
