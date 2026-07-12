@@ -881,7 +881,8 @@ elseif($page==='backup_settings'){
  $relativeCallback=base_url('admin/backup_google_callback.php'); $callback=preg_match('~^https?://~i',$relativeCallback)?$relativeCallback:(((!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost').'/'.ltrim($relativeCallback,'/'));
  if($_SERVER['REQUEST_METHOD']==='POST'){
   try{$a=(string)($_POST['backup_action']??'');
-   if($a==='save_config'){$svc->saveConfiguration($_POST);$msg='Konfigurasi backup berhasil disimpan.';}
+   if($a==='repair'){$svc->repairInfrastructure();$msg='Struktur backup berhasil diperiksa dan diperbaiki.';}
+   elseif($a==='save_config'){$svc->saveConfiguration($_POST);$msg='Konfigurasi backup berhasil disimpan.';}
    elseif($a==='connect'){$state=bin2hex(random_bytes(24));$_SESSION['backup_oauth_state']=$state;header('Location: '.$svc->authorizationUrl($callback,$state));exit;}
    elseif($a==='test'){$r=$svc->testConnection();$msg='Koneksi berhasil ke '.($r['email']??'Google Drive').'.';}
    elseif($a==='disconnect'){$svc->disconnect();$msg='Koneksi Google Drive diputus.';}
