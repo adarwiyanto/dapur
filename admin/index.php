@@ -894,7 +894,7 @@ elseif($page==='backup_settings'){
   }catch(Throwable $e){$err=backup_safe_capture($backupRoot,'DAPUR backup action',$e);}
  }
  h2('Setting Backup Google Drive');if($msg!=='')echo '<div class="notice ok">'.e($msg).'</div>';if($err!=='')echo '<div class="notice err">'.e($err).'</div>';
- if($svc){$cronCommand='/usr/local/bin/php -q '.escapeshellarg(dirname(__DIR__).'/cron_backup.php').' >/dev/null 2>&1';$relCron=base_url('cron_backup.php?key='.rawurlencode((string)$svc->get('cron_secret','')));$cronUrl=preg_match('~^https?://~i',$relCron)?$relCron:(((!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost').'/'.ltrim($relCron,'/'));backup_render_settings($svc,$callback,$cronCommand,$cronUrl,csrf_field(),'?page=backup_settings');}
+ if($svc){$cronCommand=backup_build_cron_command($svc,dirname(__DIR__).'/cron_backup.php');$relCron=base_url('cron_backup.php?key='.rawurlencode((string)$svc->get('cron_secret','')));$cronUrl=preg_match('~^https?://~i',$relCron)?$relCron:(((!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost').'/'.ltrim($relCron,'/'));backup_render_settings($svc,$callback,$cronCommand,$cronUrl,csrf_field(),'?page=backup_settings');}
  else{backup_safe_render_error($loadError,$backupRoot);}
  backup_safe_finish();
 }
