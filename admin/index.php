@@ -877,22 +877,26 @@ elseif($page==='error_log'){
 
 elseif($page==='backup_settings'){
  if(!is_owner()){http_response_code(403);die('Akses hanya owner.');}
- require_once __DIR__.'/../core/backup_adapter.php'; require_once __DIR__.'/backup_ui.php'; $svc=dapur_backup_service(); $msg='';$err='';
- $relativeCallback=base_url('admin/backup_google_callback.php'); $callback=preg_match('~^https?://~i',$relativeCallback)?$relativeCallback:(((!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost').'/'.ltrim($relativeCallback,'/'));
- if($_SERVER['REQUEST_METHOD']==='POST'){
+ $backupRoot=dirname(__DIR__); require_once $backupRoot.'/core/backup_safe.php'; backup_safe_register($backupRoot,'DAPUR admin backup settings','html');
+ $svc=null;$loadError='';$msg='';$err='';
+ try{require_once $backupRoot.'/core/backup_adapter.php';require_once __DIR__.'/backup_ui.php';$svc=dapur_backup_service();}
+ catch(Throwable $e){$loadError=backup_safe_capture($backupRoot,'DAPUR service bootstrap',$e);}
+ $relativeCallback=base_url('admin/backup_google_callback.php');$callback=preg_match('~^https?://~i',$relativeCallback)?$relativeCallback:(((!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost').'/'.ltrim($relativeCallback,'/'));
+ if($_SERVER['REQUEST_METHOD']==='POST' && $svc){
   try{$a=(string)($_POST['backup_action']??'');
    if($a==='repair'){$svc->repairInfrastructure();$msg='Struktur backup berhasil diperiksa dan diperbaiki.';}
    elseif($a==='save_config'){$svc->saveConfiguration($_POST);$msg='Konfigurasi backup berhasil disimpan.';}
-   elseif($a==='connect'){$state=bin2hex(random_bytes(24));$_SESSION['backup_oauth_state']=$state;header('Location: '.$svc->authorizationUrl($callback,$state));exit;}
+   elseif($a==='connect'){$state=bin2hex(random_bytes(24));$_SESSION['backup_oauth_state']=$state;header('Location: '.$svc->authorizationUrl($callback,$state));backup_safe_finish();exit;}
    elseif($a==='test'){$r=$svc->testConnection();$msg='Koneksi berhasil ke '.($r['email']??'Google Drive').'.';}
    elseif($a==='disconnect'){$svc->disconnect();$msg='Koneksi Google Drive diputus.';}
-   elseif($a==='download_key'){$site=preg_replace('/[^A-Za-z0-9_-]+/','-',(string)$svc->get('site_code',$svc->appKey()));while(ob_get_level()>0)@ob_end_clean();header('Content-Type: text/plain; charset=utf-8');header('Content-Disposition: attachment; filename="backup-recovery-key-'.$site.'.txt"');echo $svc->recoveryKeyText();exit;}
+   elseif($a==='download_key'){$site=preg_replace('/[^A-Za-z0-9_-]+/','-',(string)$svc->get('site_code',$svc->appKey()));while(ob_get_level()>0)@ob_end_clean();header('Content-Type: text/plain; charset=utf-8');header('Content-Disposition: attachment; filename="backup-recovery-key-'.$site.'.txt"');echo $svc->recoveryKeyText();backup_safe_finish();exit;}
    elseif($a==='run'){$r=$svc->runBackup((string)($_POST['backup_type']??'daily'),'owner');$msg='Backup berhasil: '.$r['filename'];}
-  }catch(Throwable $e){$err=$e->getMessage();}
+  }catch(Throwable $e){$err=backup_safe_capture($backupRoot,'DAPUR backup action',$e);}
  }
- h2('Setting Backup Google Drive'); if($msg!=='')echo '<div class="notice ok">'.e($msg).'</div>';if($err!=='')echo '<div class="notice err">'.e($err).'</div>';
- $cronCommand='/usr/local/bin/php -q '.escapeshellarg(dirname(__DIR__).'/cron_backup.php').' >/dev/null 2>&1';$relCron=base_url('cron_backup.php?key='.rawurlencode((string)$svc->get('cron_secret','')));$cronUrl=preg_match('~^https?://~i',$relCron)?$relCron:(((!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost').'/'.ltrim($relCron,'/'));
- backup_render_settings($svc,$callback,$cronCommand,$cronUrl,csrf_field(),'?page=backup_settings');
+ h2('Setting Backup Google Drive');if($msg!=='')echo '<div class="notice ok">'.e($msg).'</div>';if($err!=='')echo '<div class="notice err">'.e($err).'</div>';
+ if($svc){$cronCommand='/usr/local/bin/php -q '.escapeshellarg(dirname(__DIR__).'/cron_backup.php').' >/dev/null 2>&1';$relCron=base_url('cron_backup.php?key='.rawurlencode((string)$svc->get('cron_secret','')));$cronUrl=preg_match('~^https?://~i',$relCron)?$relCron:(((!empty($_SERVER['HTTPS'])&&$_SERVER['HTTPS']!=='off')?'https':'http').'://'.($_SERVER['HTTP_HOST']??'localhost').'/'.ltrim($relCron,'/'));backup_render_settings($svc,$callback,$cronCommand,$cronUrl,csrf_field(),'?page=backup_settings');}
+ else{backup_safe_render_error($loadError,$backupRoot);}
+ backup_safe_finish();
 }
 elseif($page==='owner_permissions'){
  if(!is_owner()){ http_response_code(403); die('Akses ditolak.'); }
