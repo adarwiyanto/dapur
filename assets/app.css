@@ -1296,3 +1296,16 @@ input,select,textarea{border-color:var(--border)!important;background:#fff!impor
 .badge.ok{background:#ecfdf5!important;border-color:#a7f3d0!important;color:#047857!important}
 .badge.warn{background:#fffbeb!important;border-color:#fde68a!important;color:#92400e!important}
 .badge.danger{background:#fef2f2!important;border-color:#fecaca!important;color:#b91c1c!important}
+
+/* Patch 20260806a - customer, diskon penjualan, dan total netto */
+.customer-form textarea{width:100%;resize:vertical}
+.sales-entry-table{min-width:1180px}
+.sales-entry-table th:nth-child(1){min-width:250px}
+.sales-entry-table th:nth-child(4){min-width:150px}
+.sales-entry-table th:nth-child(6){min-width:145px}
+.sales-total-card{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0;padding:14px;border:1px solid var(--border);border-radius:14px;background:#f8fafc}
+.sales-total-card>div{padding:12px 14px;border-radius:11px;background:#fff;border:1px solid #dbe3ed}
+.sales-total-card span{display:block;font-size:12px;color:var(--muted)}
+.sales-total-card strong{display:block;margin-top:5px;font-size:20px;color:var(--primary)}
+.sales-total-card>div:last-child{border-width:2px}
+@media(max-width:720px){.sales-total-card{grid-template-columns:1fr}.customer-form{grid-template-columns:1fr}}

@@ -479,6 +479,29 @@ document.addEventListener('submit', async e => {
     const rows = transferForm.querySelector('[data-transfer-rows]');
     const template = transferForm.querySelector('[data-transfer-row-template]');
     const addButton = transferForm.querySelector('[data-transfer-add]');
+    const money = (value) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value) || 0);
+    const calculateRow = (row) => {
+      const qty = Number(row?.querySelector('[data-transfer-qty]')?.value || 0);
+      const price = Number(row?.querySelector('[data-transfer-price]')?.value || 0);
+      const type = row?.querySelector('[data-discount-type]')?.value || 'none';
+      const value = Math.max(0, Number(row?.querySelector('[data-discount-value]')?.value || 0));
+      const gross = Math.max(0, qty * price);
+      let discount = type === 'percent' ? gross * Math.min(value, 100) / 100 : (type === 'nominal' ? Math.min(value, gross) : 0);
+      const total = Math.max(0, gross - discount);
+      const line = row?.querySelector('[data-line-total]');
+      if (line) line.textContent = money(total);
+      return { gross, discount, total };
+    };
+    const calculateForm = () => {
+      let gross = 0, discount = 0, total = 0;
+      rows?.querySelectorAll('[data-transfer-row]').forEach((row) => { const x = calculateRow(row); gross += x.gross; discount += x.discount; total += x.total; });
+      const grossEl = transferForm.querySelector('[data-sales-gross]');
+      const discountEl = transferForm.querySelector('[data-sales-discount]');
+      const totalEl = transferForm.querySelector('[data-sales-total]');
+      if (grossEl) grossEl.textContent = money(gross);
+      if (discountEl) discountEl.textContent = money(discount);
+      if (totalEl) totalEl.textContent = money(total);
+    };
     const syncRow = (row) => {
       const select = row?.querySelector('[data-transfer-item]');
       const price = row?.querySelector('[data-transfer-price]');
@@ -487,12 +510,14 @@ document.addEventListener('submit', async e => {
       if (!select || !option) return;
       if (!select.value) {
         if (stockCell) stockCell.textContent = 'Pilih item';
+        calculateForm();
         return;
       }
       const stock = option.dataset.stock || '0';
       const unit = option.dataset.unit || '';
       if (stockCell) stockCell.textContent = stock + (unit ? ' ' + unit : '');
       if (price && price.value === '') price.value = option.dataset.price || '0';
+      calculateForm();
     };
     addButton?.addEventListener('click', () => {
       if (!rows || !template) return;
@@ -505,15 +530,19 @@ document.addEventListener('submit', async e => {
       const row = remove.closest('[data-transfer-row]');
       row?.remove();
       if (rows.children.length === 0 && template) rows.appendChild(template.content.cloneNode(true));
+      calculateForm();
     });
     rows?.addEventListener('change', (event) => {
-      if (!event.target.matches('[data-transfer-item]')) return;
       const row = event.target.closest('[data-transfer-row]');
-      const price = row?.querySelector('[data-transfer-price]');
-      if (price) price.value = '';
-      syncRow(row);
+      if (event.target.matches('[data-transfer-item]')) {
+        const price = row?.querySelector('[data-transfer-price]');
+        if (price) price.value = '';
+        syncRow(row);
+      } else calculateForm();
     });
+    rows?.addEventListener('input', calculateForm);
     rows?.querySelectorAll('[data-transfer-row]').forEach(syncRow);
+    calculateForm();
   }
 
   const stockSearch = document.querySelector('[data-stock-search]');

@@ -1,12 +1,12 @@
 <?php
-require_once __DIR__.'/../core/auth.php'; require_once __DIR__.'/../core/api_pairing.php'; require_login(); verify_csrf();
+require_once __DIR__.'/../core/auth.php'; require_once __DIR__.'/../core/api_pairing.php'; require_once __DIR__.'/../core/sales_calculator.php'; require_login(); verify_csrf();
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 ob_start(); // patch: keep AJAX JSON clean even when admin shell is buffered
 $u=current_user(); $page=$_GET['page']??'dashboard';
 $menus=[
- 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian Bahan Baku','🛒','purchases'], 'expenses'=>['Pengeluaran','💸','purchases'], 'payment_requests'=>['Permintaan Pembayaran','🧾','purchases'], 'expense_categories'=>['Setting Pengeluaran','↳','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan ke Toko','🚚','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'hope_connection'=>['Koneksi ke HOPe','🔗','api'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'company_settings'=>['Edit Perusahaan','🏢','users'], 'backup_settings'=>['Setting Backup Google Drive','☁️','users','owner'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
+ 'dashboard'=>['Dashboard','🏠','dashboard'], 'stores'=>['Toko & API','🔌','stores'], 'finished'=>['Produk Jadi','📦','products'], 'finished_hidden'=>['Hide Produk','↳','products'], 'raw'=>['Bahan Baku','🥣','raw_materials'], 'purchases'=>['Pembelian Bahan Baku','🛒','purchases'], 'expenses'=>['Pengeluaran','💸','purchases'], 'payment_requests'=>['Permintaan Pembayaran','🧾','purchases'], 'expense_categories'=>['Setting Pengeluaran','↳','purchases'], 'bom'=>['BOM','🧾','bom'], 'bom_hidden'=>['Hide BOM','↳','bom'], 'production'=>['Produksi','🏭','production'], 'stock'=>['Stok','📊','stock'], 'stock_opname'=>['Stok Opname','🧮','stock_opname'], 'sales'=>['Penjualan / Distribusi','🚚','sales_distribution'], 'customers'=>['Daftar Customer','↳','sales_distribution'], 'activities'=>['Kegiatan Pegawai','⭐','activities'], 'activity_types'=>['Daftar Kegiatan Pegawai','↳','activities'], 'remuneration'=>['Remunerasi','💰','remuneration'], 'users'=>['User & Role','👤','users'], 'hope_connection'=>['Koneksi ke HOPe','🔗','api'], 'api_integrations'=>['API & Integrasi','🔌','api'], 'company_settings'=>['Edit Perusahaan','🏢','users'], 'backup_settings'=>['Setting Backup Google Drive','☁️','users','owner'], 'error_log'=>['Error Log','🧯','error_log','owner'], 'owner_permissions'=>['Pengaturan Permission','🛡️','permissions','owner'], 'api'=>['API Token','🔐','api']
 ];
 if(!isset($menus[$page])) $page='dashboard'; require_perm($menus[$page][2]); if(($menus[$page][3]??'')==='owner' && !is_owner()){ http_response_code(403); die('Akses ditolak.'); }
 function h2($t){echo '<h2>'.e($t).'</h2>';}
@@ -208,6 +208,28 @@ function ensure_hope_transfer_schema(): void {
  try{ if(!column_exists_local('api_connections','token_plain')) db()->exec("ALTER TABLE api_connections ADD COLUMN token_plain TEXT NULL AFTER token_hash"); }catch(Throwable $e){}
  try{ if(!column_exists_local('api_connections','access_token_plain')) db()->exec("ALTER TABLE api_connections ADD COLUMN access_token_plain TEXT NULL AFTER token_plain"); }catch(Throwable $e){}
 }
+function ensure_sales_customer_schema(): void {
+ try{
+  db()->exec("CREATE TABLE IF NOT EXISTS customers (id INT AUTO_INCREMENT PRIMARY KEY, customer_code VARCHAR(60) NULL, customer_name VARCHAR(160) NOT NULL, phone VARCHAR(60) NULL, address TEXT NULL, notes TEXT NULL, is_active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NULL, UNIQUE KEY uq_customer_code(customer_code), KEY idx_customer_active_name(is_active,customer_name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+ }catch(Throwable $e){}
+ try{ if(!column_exists_local('kitchen_sales_headers','customer_id')) db()->exec("ALTER TABLE kitchen_sales_headers ADD COLUMN customer_id INT NULL AFTER store_id"); }catch(Throwable $e){}
+ try{ if(!column_exists_local('kitchen_sales_items','original_price')) db()->exec("ALTER TABLE kitchen_sales_items ADD COLUMN original_price DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER transfer_price"); }catch(Throwable $e){}
+ try{ if(!column_exists_local('kitchen_sales_items','discount_type')) db()->exec("ALTER TABLE kitchen_sales_items ADD COLUMN discount_type VARCHAR(20) NOT NULL DEFAULT 'none' AFTER original_price"); }catch(Throwable $e){}
+ try{ if(!column_exists_local('kitchen_sales_items','discount_value')) db()->exec("ALTER TABLE kitchen_sales_items ADD COLUMN discount_value DECIMAL(18,4) NOT NULL DEFAULT 0 AFTER discount_type"); }catch(Throwable $e){}
+ try{ if(!column_exists_local('kitchen_sales_items','discount_amount')) db()->exec("ALTER TABLE kitchen_sales_items ADD COLUMN discount_amount DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER discount_value"); }catch(Throwable $e){}
+}
+function customer_ref_count(int $id): int {
+ if(!table_exists('kitchen_sales_headers') || !column_exists_local('kitchen_sales_headers','customer_id')) return 0;
+ return (int)(one('SELECT COUNT(*) c FROM kitchen_sales_headers WHERE customer_id=?',[$id])['c']??0);
+}
+function sale_destination_from_post(): ?array {
+ $raw=trim((string)($_POST['destination']??''));
+ [$type,$id]=array_pad(explode(':',$raw,2),2,'0'); $id=(int)$id;
+ if($type==='store' && $id>0){ $row=one("SELECT * FROM stores WHERE id=? AND is_active=1 AND NOT (store_code LIKE 'HOPE-%' OR COALESCE(notes,'') LIKE '%HOPe%')",[$id]); return $row?['type'=>'store','id'=>$id,'name'=>$row['store_name'],'store'=>$row]:null; }
+ if($type==='customer' && $id>0){ $row=one('SELECT * FROM customers WHERE id=? AND is_active=1',[$id]); return $row?['type'=>'customer','id'=>$id,'name'=>$row['customer_name'],'customer'=>$row]:null; }
+ return null;
+}
+
 function dapur_transfer_catalog(): array {
  ensure_hope_transfer_schema();
  $out=[];
@@ -241,17 +263,19 @@ $f=flash();
 normalize_dapur_roles_runtime();
 ensure_dapur_employee_role_column();
 ensure_hope_transfer_schema();
+ensure_sales_customer_schema();
 require_once __DIR__.'/history_reports.php';
 $pairNotif=pairing_pending_rows(8); $pairNotifCount=count($pairNotif);
-?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css?v=20260711c"><script src="../assets/app.js?v=20260711c" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php
+?><!doctype html><html><head><meta charset="utf-8"><title>Dapur Adena</title><link rel="stylesheet" href="../assets/app.css?v=20260806a"><script src="../assets/app.js?v=20260806a" defer></script></head><body><div class="app-shell"><aside class="sidebar"><div class="brand">Dapur Adena</div><div class="brand-sub">Produksi • BOM • Multi Toko</div><nav class="nav"><?php
 $navGroups=[
  ['label'=>'Utama','items'=>['dashboard','raw','production','stock','stock_opname','sales','remuneration']],
- ['label'=>'Keuangan','items'=>['purchases','expenses','payment_requests','expense_categories']],
+ ['label'=>'Keuangan','items'=>['purchases','expenses','payment_requests']],
  ['label'=>'Produk Jadi','items'=>['finished','finished_hidden']],
  ['label'=>'BOM','items'=>['bom','bom_hidden']],
  ['label'=>'Kegiatan Pegawai','items'=>['activities','activity_types']],
- ['label'=>'Admin','items'=>['users','company_settings','error_log','owner_permissions']],
- ['label'=>'Setting System','items'=>['api_integrations','hope_connection','production','stock','backup_settings']],
+ ['label'=>'Admin','items'=>['users','error_log','owner_permissions']],
+ ['label'=>'Setting','items'=>['customers','expense_categories','company_settings']],
+ ['label'=>'Setting System','items'=>['api_integrations','hope_connection','backup_settings']],
 ];
 foreach($navGroups as $grp){
  $visible=[]; foreach($grp['items'] as $k){ if(!isset($menus[$k])) continue; $m=$menus[$k]; if(($m[3]??'')==='owner' && !is_owner()) continue; if(can($m[2])) $visible[]=$k; }
@@ -266,6 +290,37 @@ foreach($navGroups as $grp){
 <?php
 if($page==='dashboard'){
  h2('Dashboard Dapur'); $stats=[['Bahan baku',db()->query('SELECT COUNT(*) FROM raw_materials')->fetchColumn()],['Produk jadi',db()->query('SELECT COUNT(*) FROM finished_products')->fetchColumn()],['Produksi',db()->query('SELECT COUNT(*) FROM production_headers')->fetchColumn()],['Penjualan ke toko',db()->query('SELECT COUNT(*) FROM kitchen_sales_headers')->fetchColumn()],['Kegiatan pegawai',db()->query('SELECT COUNT(*) FROM employee_activities')->fetchColumn()]]; echo '<div class="grid">'; foreach($stats as $s) echo '<div class="card"><div class="muted">'.e($s[0]).'</div><div class="stat">'.e($s[1]).'</div></div>'; echo '</div>';
+}
+elseif($page==='customers'){
+ if($_SERVER['REQUEST_METHOD']==='POST'){
+  $act=$_POST['act']??'save_customer';
+  if($act==='save_customer'){
+   $id=(int)($_POST['id']??0); $name=postval('customer_name'); $code=postval('customer_code');
+   if($name===''){ flash('Nama customer wajib diisi.','err'); redirect('?page=customers'); }
+   $params=[$code!==''?$code:null,$name,postval('phone'),postval('address'),postval('notes'),isset($_POST['is_active'])?1:0];
+   try{
+    if($id>0) execq('UPDATE customers SET customer_code=?,customer_name=?,phone=?,address=?,notes=?,is_active=?,updated_at=NOW() WHERE id=?',array_merge($params,[$id]));
+    else execq('INSERT INTO customers(customer_code,customer_name,phone,address,notes,is_active) VALUES(?,?,?,?,?,?)',$params);
+    flash('Data customer berhasil disimpan.');
+   }catch(Throwable $e){ flash('Gagal menyimpan customer. Pastikan kode customer tidak duplikat.','err'); }
+   redirect('?page=customers');
+  }
+  if($act==='delete_customer'){
+   $id=(int)($_POST['id']??0); $refs=customer_ref_count($id);
+   if($refs>0){ execq('UPDATE customers SET is_active=0,updated_at=NOW() WHERE id=?',[$id]); flash('Customer sudah pernah dipakai, sehingga dinonaktifkan agar histori tetap aman.'); }
+   else { execq('DELETE FROM customers WHERE id=?',[$id]); flash('Customer dihapus.'); }
+   redirect('?page=customers');
+  }
+ }
+ h2('Daftar Customer');
+ echo '<p class="muted">Toko terintegrasi tetap dikelola dari menu Toko & API. Tambahkan customer non-toko di sini, misalnya Kelapa, reseller, acara, atau pelanggan lainnya.</p>';
+ $editId=(int)($_GET['edit']??0); $edit=$editId>0?one('SELECT * FROM customers WHERE id=?',[$editId]):null;
+ echo '<form method="post" class="form-grid compact-form customer-form">'.csrf_field().'<input type="hidden" name="act" value="save_customer"><input type="hidden" name="id" value="'.(int)($edit['id']??0).'"><p><label>Nama customer<input name="customer_name" value="'.e($edit['customer_name']??'').'" required placeholder="Contoh: Kelapa"></label></p><p><label>Kode customer<input name="customer_code" value="'.e($edit['customer_code']??'').'" placeholder="Opsional"></label></p><p><label>Nomor kontak<input name="phone" value="'.e($edit['phone']??'').'"></label></p><p><label>Alamat<textarea name="address" rows="2">'.e($edit['address']??'').'</textarea></label></p><p><label>Catatan<input name="notes" value="'.e($edit['notes']??'').'"></label></p><p><label class="check-inline"><input type="checkbox" name="is_active" '.((!$edit||!empty($edit['is_active']))?'checked':'').'> Aktif</label></p><p class="actions"><button class="btn">'.($edit?'Update':'Simpan').'</button>'.($edit?' <a class="btn light" href="?page=customers">Batal</a>':'').'</p></form>';
+ echo '<h3>Customer non-toko</h3><div class="table-scroll"><table class="compact-table"><tr><th>Kode</th><th>Nama</th><th>Kontak</th><th>Alamat/Keterangan</th><th>Status</th><th>Aksi</th></tr>';
+ foreach(all('SELECT * FROM customers ORDER BY is_active DESC,customer_name') as $r){ echo '<tr><td>'.e($r['customer_code']?:'-').'</td><td><b>'.e($r['customer_name']).'</b></td><td>'.e($r['phone']?:'-').'</td><td>'.e($r['address']?:$r['notes']?:'-').'</td><td>'.($r['is_active']?'Aktif':'Nonaktif').'</td><td><div class="actions mini"><a class="btn light" href="?page=customers&edit='.(int)$r['id'].'">Edit</a><form method="post" onsubmit="return confirm(&quot;Hapus/nonaktifkan customer ini?&quot;)">'.csrf_field().'<input type="hidden" name="act" value="delete_customer"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn danger">Hapus</button></form></div></td></tr>'; }
+ echo '</table></div><h3>Toko terintegrasi</h3><div class="table-scroll"><table class="compact-table"><tr><th>Kode</th><th>Nama toko</th><th>Status</th><th>Pengaturan</th></tr>';
+ foreach(all("SELECT * FROM stores WHERE NOT (store_code LIKE 'HOPE-%' OR COALESCE(notes,'') LIKE '%HOPe%') ORDER BY store_name") as $r) echo '<tr><td>'.e($r['store_code']).'</td><td>'.e($r['store_name']).'</td><td>'.($r['is_active']?'Aktif':'Nonaktif').'</td><td><a class="btn light" href="?page=stores&edit='.(int)$r['id'].'">Toko & API</a></td></tr>';
+ echo '</table></div>';
 }
 elseif($page==='stores'){
  if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -624,92 +679,75 @@ elseif($page==='sales'){
  if($_SERVER['REQUEST_METHOD']==='POST'){
   $act=$_POST['act']??'create_transfer';
   if($act==='resync_transfer'){
-   $sid=(int)($_POST['id']??0);
-   $h=$sid>0?one('SELECT * FROM kitchen_sales_headers WHERE id=?',[$sid]):null;
-   if(!$h){ flash('Transfer tidak ditemukan.','err'); redirect('?page=sales'); }
+   $sid=(int)($_POST['id']??0); $h=$sid>0?one('SELECT * FROM kitchen_sales_headers WHERE id=?',[$sid]):null;
+   if(!$h || empty($h['store_id'])){ flash('Transaksi ini bukan transfer toko atau tidak ditemukan.','err'); redirect('?page=sales'); }
    $store=one('SELECT * FROM stores WHERE id=?',[(int)$h['store_id']]);
    if(!$store){ flash('Toko tujuan tidak ditemukan.','err'); redirect('?page=sales'); }
-   $payload=build_transfer_payload($store,$sid);
-   $res=send_kitchen_transfer($store,$payload);
-   $newStatus=$res['ok']?'sent_to_store':'failed_sync';
-   $remoteText=$res['curl_error']!==''?$res['curl_error']:($res['body']!==''?$res['body']:$res['message']);
+   $payload=build_transfer_payload($store,$sid); $res=send_kitchen_transfer($store,$payload);
+   $newStatus=$res['ok']?'sent_to_store':'failed_sync'; $remoteText=$res['curl_error']!==''?$res['curl_error']:($res['body']!==''?$res['body']:$res['message']);
    execq('UPDATE kitchen_sales_headers SET status=?, synced_at=NOW(), remote_response=? WHERE id=?',[$newStatus,$remoteText,$sid]);
    api_log_event((int)$store['id'],$res['endpoint'],'out',$newStatus,$res['message'],['request'=>$payload,'response'=>response_payload((int)$res['http_code'],(string)$res['body'],(string)$res['curl_error'])]);
-   flash(($res['ok']?'Kirim ulang berhasil. Transfer menunggu konfirmasi toko.':'Kirim ulang gagal. '.$res['message']).' No: '.$h['sale_no'],$res['ok']?'ok':'err');
-   redirect('?page=sales');
+   flash(($res['ok']?'Kirim ulang berhasil. Transfer menunggu konfirmasi toko.':'Kirim ulang gagal. '.$res['message']).' No: '.$h['sale_no'],$res['ok']?'ok':'err'); redirect('?page=sales');
   }
-  $store=one('SELECT * FROM stores WHERE id=? AND is_active=1',[(int)($_POST['store_id']??0)]);
-  if(!$store){ flash('Toko tujuan tidak valid/nonaktif.','err'); redirect('?page=sales'); }
-  $rows=[]; $total=0.0;
+  $destination=sale_destination_from_post();
+  if(!$destination){ flash('Tujuan penjualan tidak valid atau nonaktif.','err'); redirect('?page=sales'); }
+  $inputRows=[];
   foreach($_POST['transfer_item']??[] as $i=>$key){
    $item=dapur_item_by_key((string)$key); $qty=(float)($_POST['qty'][$i]??0); if(!$item||$qty<=0) continue;
-   $stock=stock_qty($item['type'],(int)$item['id']);
-   if($stock+0.0001<$qty){ flash('Stok tidak cukup untuk '.($item['name']??'item').'. Stok saat ini: '.dec($stock),'err'); redirect('?page=sales'); }
+   $stock=stock_qty($item['type'],(int)$item['id']); if($stock+0.0001<$qty){ flash('Stok tidak cukup untuk '.($item['name']??'item').'. Stok saat ini: '.dec($stock),'err'); redirect('?page=sales'); }
    $priceRaw=trim((string)($_POST['transfer_price'][$i]??'')); $price=$priceRaw===''?(float)$item['price']:(float)$priceRaw;
-   $sub=$qty*$price; $total+=$sub;
-   $rows[]=['item'=>$item,'qty'=>$qty,'price'=>$price,'subtotal'=>$sub];
+   $inputRows[]=['item'=>$item,'qty'=>$qty,'price'=>$price,'discount_type'=>(string)($_POST['discount_type'][$i]??'none'),'discount_value'=>(float)($_POST['discount_value'][$i]??0)];
   }
-  if(count($rows)<1){ flash('Minimal 1 bahan/produk dan qty wajib diisi.','err'); redirect('?page=sales'); }
-  $no=next_no('KDS','kitchen_sales_headers','sale_no');
+  if(!$inputRows){ flash('Minimal 1 bahan/produk dan qty wajib diisi.','err'); redirect('?page=sales'); }
+  try{ $calc=sales_calculate($inputRows); }catch(Throwable $e){ flash('Perhitungan penjualan tidak valid: '.$e->getMessage(),'err'); redirect('?page=sales'); }
+  $no=next_no('KDS','kitchen_sales_headers','sale_no'); $isStore=$destination['type']==='store';
   try{
    db()->beginTransaction();
-   execq('INSERT INTO kitchen_sales_headers(sale_no,sale_date,store_id,sale_type,status,notes,created_by,posted_at) VALUES(?,?,?,?,?,?,?,NOW())',[$no,postval('sale_date',date('Y-m-d')),(int)$store['id'],'store_distribution','posted',postval('notes'),(int)($u['id']??0)]);
+   execq('INSERT INTO kitchen_sales_headers(sale_no,sale_date,store_id,customer_id,sale_type,status,total_amount,notes,created_by,posted_at) VALUES(?,?,?,?,?,?,?,?,?,NOW())',[$no,postval('sale_date',date('Y-m-d')),$isStore?(int)$destination['id']:null,$isStore?null:(int)$destination['id'],$isStore?'store_distribution':'direct','posted',$calc['total'],postval('notes'),(int)($u['id']??0)]);
    $sid=(int)db()->lastInsertId();
-   foreach($rows as $r){ $it=$r['item']; $finishedId=$it['type']==='finished'?(int)$it['id']:0; execq('INSERT INTO kitchen_sales_items(sale_id,item_type,item_ref_id,item_name,finished_product_id,qty,unit,transfer_price,subtotal) VALUES(?,?,?,?,?,?,?,?,?)',[$sid,$it['type'],(int)$it['id'],$it['name'],$finishedId,$r['qty'],$it['unit'],$r['price'],$r['subtotal']]); add_ledger($it['type'],(int)$it['id'],'sale_to_store','kitchen_sales_headers',$sid,0,(float)$r['qty'],(float)$r['price'],$no,(int)($u['id']??0)); }
-   execq('UPDATE kitchen_sales_headers SET total_amount=? WHERE id=?',[$total,$sid]);
+   foreach($calc['rows'] as $r){ $it=$r['item']; $finishedId=$it['type']==='finished'?(int)$it['id']:0; execq('INSERT INTO kitchen_sales_items(sale_id,item_type,item_ref_id,item_name,finished_product_id,qty,unit,transfer_price,original_price,discount_type,discount_value,discount_amount,subtotal) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',[$sid,$it['type'],(int)$it['id'],$it['name'],$finishedId,$r['qty'],$it['unit'],$r['net_unit_price'],$r['price'],$r['discount_type'],$r['discount_value'],$r['discount_amount'],$r['subtotal']]); add_ledger($it['type'],(int)$it['id'],$isStore?'sale_to_store':'direct_sale','kitchen_sales_headers',$sid,0,(float)$r['qty'],(float)$r['net_unit_price'],$no,(int)($u['id']??0)); }
    db()->commit();
-  }catch(Throwable $e){ if(db()->inTransaction()) db()->rollBack(); flash('Gagal membuat transfer: '.$e->getMessage(),'err'); redirect('?page=sales'); }
-  $payload=build_transfer_payload($store,$sid);
-  $res=send_kitchen_transfer($store,$payload);
-  $remoteText=$res['curl_error']!==''?$res['curl_error']:($res['body']!==''?$res['body']:$res['message']);
-  $status=$res['ok']?'sent_to_store':'failed_sync';
+  }catch(Throwable $e){ if(db()->inTransaction()) db()->rollBack(); flash('Gagal membuat penjualan: '.$e->getMessage(),'err'); redirect('?page=sales'); }
+  if(!$isStore){ flash('Penjualan ke '.$destination['name'].' berhasil diposting. No: '.$no,'ok'); redirect('?page=sales&history=1&detail='.$sid); }
+  $store=$destination['store']; $payload=build_transfer_payload($store,$sid); $res=send_kitchen_transfer($store,$payload);
+  $remoteText=$res['curl_error']!==''?$res['curl_error']:($res['body']!==''?$res['body']:$res['message']); $status=$res['ok']?'sent_to_store':'failed_sync';
   $msg=$res['ok']?'Transfer dikirim ke toko dan menunggu konfirmasi penerimaan manager cabang.':'Penjualan/transfer ke toko dibuat tetapi gagal sync. '.$res['message'];
-  if($res['remote_status']==='pending_confirmation') $msg='Transfer dikirim ke toko. Status toko: pending konfirmasi manager.';
-  if($res['remote_status']==='duplicate') $msg='Transfer sudah pernah diterima di toko. Tidak dibuat ganda.';
-  execq('UPDATE kitchen_sales_headers SET status=?, synced_at=NOW(), remote_response=? WHERE id=?',[$status,$remoteText,$sid]);
-  api_log_event((int)$store['id'],$res['endpoint'],'out',$status,$res['message'],['request'=>$payload,'response'=>response_payload((int)$res['http_code'],(string)$res['body'],(string)$res['curl_error'])]);
-  flash($msg.' No: '.$no, $status==='failed_sync'?'err':'ok'); redirect('?page=sales&history=1&detail='.$sid);
+  if($res['remote_status']==='pending_confirmation') $msg='Transfer dikirim ke toko. Status toko: pending konfirmasi manager.'; if($res['remote_status']==='duplicate') $msg='Transfer sudah pernah diterima di toko. Tidak dibuat ganda.';
+  execq('UPDATE kitchen_sales_headers SET status=?, synced_at=NOW(), remote_response=? WHERE id=?',[$status,$remoteText,$sid]); api_log_event((int)$store['id'],$res['endpoint'],'out',$status,$res['message'],['request'=>$payload,'response'=>response_payload((int)$res['http_code'],(string)$res['body'],(string)$res['curl_error'])]);
+  flash($msg.' No: '.$no,$status==='failed_sync'?'err':'ok'); redirect('?page=sales&history=1&detail='.$sid);
  }
- h2('Pengiriman Stok ke HOPe/Toko');
- $catalog=dapur_transfer_catalog();
- $catalogOptions='<option value="">- pilih bahan / produk -</option>';
+ h2('Penjualan / Distribusi'); $catalog=dapur_transfer_catalog(); $catalogOptions='<option value="">- pilih bahan / produk -</option>';
  foreach($catalog as $it) $catalogOptions.='<option value="'.e($it['key']).'" data-price="'.e((string)$it['price']).'" data-stock="'.e((string)$it['stock']).'" data-unit="'.e($it['unit']).'">'.e(($it['type']==='raw'?'[Bahan] ':'[Produk] ').$it['name']).'</option>';
- $rowHtml='<tr data-transfer-row><td><select name="transfer_item[]" data-transfer-item>'.$catalogOptions.'</select></td><td><input name="qty[]" type="number" step="0.0001" min="0" data-transfer-qty></td><td><input name="transfer_price[]" type="number" step="0.01" min="0" placeholder="otomatis" data-transfer-price></td><td data-transfer-stock class="muted">Pilih item</td><td><button type="button" class="btn danger transfer-remove" data-transfer-remove aria-label="Hapus baris">Hapus</button></td></tr>';
- echo '<form method="post" class="compact-form transfer-form" data-transfer-form>'.csrf_field().'<input type="hidden" name="act" value="create_transfer"><div class="form-grid"><p><label>Tanggal<input name="sale_date" type="date" value="'.date('Y-m-d').'"></label></p><p><label>Tujuan<select name="store_id">';
- foreach(all("SELECT * FROM stores WHERE is_active=1 AND NOT (store_code LIKE 'HOPE-%' OR COALESCE(notes,'') LIKE '%HOPe%') ORDER BY store_name") as $s) echo '<option value="'.(int)$s['id'].'">'.e($s['store_name']).'</option>';
- echo '</select></label></p><p><label>Catatan<input name="notes"></label></p></div><div class="transfer-table-head"><div><h3>Daftar Bahan / Produk</h3><span class="muted small">Default empat baris. Tambah satu baris setiap kali diperlukan.</span></div><button type="button" class="btn light" data-transfer-add>+ Tambah Produk</button></div><div class="table-scroll"><table class="compact-table transfer-table"><thead><tr><th>Bahan/Produk</th><th>Qty</th><th>Harga Transfer</th><th>Stok Tersedia</th><th>Aksi</th></tr></thead><tbody data-transfer-rows>';
+ $rowHtml='<tr data-transfer-row><td><select name="transfer_item[]" data-transfer-item>'.$catalogOptions.'</select></td><td><input name="qty[]" type="number" step="0.0001" min="0" data-transfer-qty></td><td><input name="transfer_price[]" type="number" step="0.01" min="0" placeholder="otomatis" data-transfer-price></td><td><select name="discount_type[]" data-discount-type><option value="none">Tanpa diskon</option><option value="percent">Persen (%)</option><option value="nominal">Nominal (Rp)</option></select></td><td><input name="discount_value[]" type="number" step="0.01" min="0" value="0" data-discount-value></td><td class="num" data-line-total>Rp 0</td><td data-transfer-stock class="muted">Pilih item</td><td><button type="button" class="btn danger transfer-remove" data-transfer-remove>Hapus</button></td></tr>';
+ echo '<form method="post" class="compact-form transfer-form" data-transfer-form>'.csrf_field().'<input type="hidden" name="act" value="create_transfer"><div class="form-grid"><p><label>Tanggal<input name="sale_date" type="date" value="'.date('Y-m-d').'" required></label></p><p><label>Customer / Tujuan<select name="destination" required><option value="">- pilih tujuan -</option><optgroup label="Toko terintegrasi">';
+ foreach(all("SELECT * FROM stores WHERE is_active=1 AND NOT (store_code LIKE 'HOPE-%' OR COALESCE(notes,'') LIKE '%HOPe%') ORDER BY store_name") as $st) echo '<option value="store:'.(int)$st['id'].'">'.e($st['store_name']).'</option>';
+ echo '</optgroup><optgroup label="Customer lainnya">'; foreach(all('SELECT * FROM customers WHERE is_active=1 ORDER BY customer_name') as $c) echo '<option value="customer:'.(int)$c['id'].'">'.e($c['customer_name']).'</option>';
+ echo '</optgroup></select></label><small><a href="?page=customers">Kelola daftar customer</a></small></p><p><label>Catatan<input name="notes"></label></p></div><div class="transfer-table-head"><div><h3>Daftar Bahan / Produk</h3><span class="muted small">Diskon dihitung per item. Nilai netto final tetap disimpan ke kitchen_sales_headers.total_amount.</span></div><button type="button" class="btn light" data-transfer-add>+ Tambah Produk</button></div><div class="table-scroll"><table class="compact-table transfer-table sales-entry-table"><thead><tr><th>Bahan/Produk</th><th>Qty</th><th>Harga awal</th><th>Jenis diskon</th><th>Nilai diskon</th><th>Subtotal netto</th><th>Stok</th><th>Aksi</th></tr></thead><tbody data-transfer-rows>';
  for($i=0;$i<4;$i++) echo $rowHtml;
- echo '</tbody></table></div><template data-transfer-row-template>'.$rowHtml.'</template><p class="actions"><button class="btn">Posting & Kirim Stok</button><button type="button" class="btn light" data-history-open="sales">Riwayat Transfer</button></p></form>';
-
+ echo '</tbody></table></div><template data-transfer-row-template>'.$rowHtml.'</template><div class="sales-total-card"><div><span>Total bruto</span><strong data-sales-gross>Rp 0</strong></div><div><span>Total diskon</span><strong data-sales-discount>Rp 0</strong></div><div><span>Total penjualan</span><strong data-sales-total>Rp 0</strong></div></div><p class="actions"><button class="btn">Posting Penjualan</button><button type="button" class="btn light" data-history-open="sales">Riwayat Penjualan</button></p></form>';
  $hist=dapur_history_context('month');
- $saleRows=all('SELECT h.*,s.store_name,u.name created_by_name FROM kitchen_sales_headers h LEFT JOIN stores s ON s.id=h.store_id LEFT JOIN users u ON u.id=h.created_by WHERE h.sale_date BETWEEN ? AND ? ORDER BY h.sale_date DESC,h.id DESC LIMIT 300',[$hist['from'],$hist['to']]);
- if($hist['detail']>0 && !array_filter($saleRows,fn($x)=>(int)$x['id']===$hist['detail'])){ $extra=one('SELECT h.*,s.store_name,u.name created_by_name FROM kitchen_sales_headers h LEFT JOIN stores s ON s.id=h.store_id LEFT JOIN users u ON u.id=h.created_by WHERE h.id=?',[$hist['detail']]); if($extra) array_unshift($saleRows,$extra); }
+ $saleSql='SELECT h.*,COALESCE(s.store_name,c.customer_name) destination_name,u.name created_by_name FROM kitchen_sales_headers h LEFT JOIN stores s ON s.id=h.store_id LEFT JOIN customers c ON c.id=h.customer_id LEFT JOIN users u ON u.id=h.created_by WHERE h.sale_date BETWEEN ? AND ? ORDER BY h.sale_date DESC,h.id DESC LIMIT 300';
+ $saleRows=all($saleSql,[$hist['from'],$hist['to']]); if($hist['detail']>0 && !array_filter($saleRows,fn($x)=>(int)$x['id']===$hist['detail'])){ $extra=one(str_replace('WHERE h.sale_date BETWEEN ? AND ?','WHERE h.id=?',$saleSql),[$hist['detail']]); if($extra) array_unshift($saleRows,$extra); }
  $saleTotal=0.0; foreach($saleRows as $r) $saleTotal+=(float)$r['total_amount'];
- $table='<div class="history-summary"><div><strong>'.count($saleRows).'</strong><span>Transfer</span></div><div><strong>'.rupiah($saleTotal).'</strong><span>Total nilai transfer</span></div><div><strong>'.e(dapur_history_range_label($hist)).'</strong><span>Periode</span></div></div><div class="table-scroll"><table class="history-table"><thead><tr><th>No/Tanggal</th><th>Tujuan</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead><tbody>';
- foreach($saleRows as $r){
-  $detailUrl=dapur_history_detail_url('sales',$hist,(int)$r['id']);
-  $table.='<tr><td><b>'.e($r['sale_no']).'</b><br><small>'.e($r['sale_date']).'</small></td><td>'.e($r['store_name']?:'-').'</td><td>'.rupiah($r['total_amount']).'</td><td><span class="badge '.($r['status']==='failed_sync'?'danger':'ok').'">'.e(dapur_status_label((string)$r['status'])).'</span></td><td><div class="actions mini"><a class="btn light" href="'.e($detailUrl).'">Detail / Faktur</a>';
-  if($r['status']==='failed_sync') $table.='<form method="post">'.csrf_field().'<input type="hidden" name="act" value="resync_transfer"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Kirim Ulang</button></form>';
-  $table.='</div></td></tr>';
- }
- if(!$saleRows) $table.='<tr><td colspan="5" class="muted">Belum ada transfer pada periode ini.</td></tr>';
- $table.='</tbody></table></div>';
- echo dapur_history_modal('sales','Riwayat Transfer Stok',dapur_history_filter_form('sales',$hist,true),$table,$hist['open']);
- $r=null; foreach($saleRows as $candidate){ if((int)$candidate['id']===$hist['detail']){ $r=$candidate; break; } }
+ $table='<div class="history-summary"><div><strong>'.count($saleRows).'</strong><span>Transaksi</span></div><div><strong>'.rupiah($saleTotal).'</strong><span>Total penjualan netto</span></div><div><strong>'.e(dapur_history_range_label($hist)).'</strong><span>Periode</span></div></div><div class="table-scroll"><table class="history-table"><thead><tr><th>No/Tanggal</th><th>Customer/Tujuan</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead><tbody>';
+ foreach($saleRows as $r){ $detailUrl=dapur_history_detail_url('sales',$hist,(int)$r['id']); $table.='<tr><td><b>'.e($r['sale_no']).'</b><br><small>'.e($r['sale_date']).'</small></td><td>'.e($r['destination_name']?:'-').'<br><small>'.(!empty($r['store_id'])?'Toko terintegrasi':'Customer lainnya').'</small></td><td>'.rupiah($r['total_amount']).'</td><td><span class="badge '.($r['status']==='failed_sync'?'danger':'ok').'">'.e(dapur_status_label((string)$r['status'])).'</span></td><td><div class="actions mini"><a class="btn light" href="'.e($detailUrl).'">Detail / Faktur</a>'; if($r['status']==='failed_sync' && !empty($r['store_id'])) $table.='<form method="post">'.csrf_field().'<input type="hidden" name="act" value="resync_transfer"><input type="hidden" name="id" value="'.(int)$r['id'].'"><button class="btn light">Kirim Ulang</button></form>'; $table.='</div></td></tr>'; }
+ if(!$saleRows) $table.='<tr><td colspan="5" class="muted">Belum ada penjualan pada periode ini.</td></tr>'; $table.='</tbody></table></div>';
+ echo dapur_history_modal('sales','Riwayat Penjualan',dapur_history_filter_form('sales',$hist,true),$table,$hist['open']);
+ $r=null; foreach($saleRows as $candidate){ if((int)$candidate['id']===$hist['detail']){$r=$candidate;break;} }
  if($r){
   $items=all("SELECT i.*,COALESCE(NULLIF(i.item_name,''),fp.name,rm.name,'-') item_display FROM kitchen_sales_items i LEFT JOIN finished_products fp ON fp.id=i.finished_product_id LEFT JOIN raw_materials rm ON rm.id=i.item_ref_id AND i.item_type='raw' WHERE i.sale_id=? ORDER BY i.id",[(int)$r['id']]);
-  $body=dapur_report_header('FAKTUR / SURAT PENGIRIMAN STOK',(string)$r['sale_no'],'Distribusi stok dari dapur ke toko');
-  $body.='<div class="record-meta"><div><span>Tanggal</span><strong>'.e($r['sale_date']).'</strong></div><div><span>Toko tujuan</span><strong>'.e($r['store_name']?:'-').'</strong></div><div><span>Status</span><strong>'.e(dapur_status_label((string)$r['status'])).'</strong></div><div><span>Petugas</span><strong>'.e($r['created_by_name']?:'-').'</strong></div><div><span>Diposting</span><strong>'.e($r['posted_at']?:'-').'</strong></div><div><span>Sinkronisasi</span><strong>'.e($r['synced_at']?:'-').'</strong></div></div>';
-  $body.='<table class="record-table"><thead><tr><th>No</th><th>Bahan / Produk</th><th>Jenis</th><th class="num">Qty</th><th>Satuan</th><th class="num">Harga transfer</th><th class="num">Subtotal</th></tr></thead><tbody>';
-  foreach($items as $i=>$it) $body.='<tr><td>'.($i+1).'</td><td>'.e($it['item_display']).'</td><td>'.e(($it['item_type']??'finished')==='raw'?'Bahan baku':'Produk jadi').'</td><td class="num">'.dec($it['qty']).'</td><td>'.e($it['unit']).'</td><td class="num">'.rupiah($it['transfer_price']).'</td><td class="num">'.rupiah($it['subtotal']).'</td></tr>';
-  if(!$items) $body.='<tr><td colspan="7" class="muted">Tidak ada rincian item.</td></tr>';
-  $body.='</tbody><tfoot><tr><th colspan="6">TOTAL NILAI TRANSFER</th><th class="num">'.rupiah($r['total_amount']).'</th></tr></tfoot></table><div class="record-note"><span>Catatan</span><p>'.nl2br(e($r['notes']?:'-')).'</p></div>';
-  if($r['status']==='failed_sync' && trim((string)$r['remote_response'])!=='') $body.='<div class="record-sync-note no-print"><strong>Catatan sinkronisasi:</strong><pre class="log-pre">'.e(short_text($r['remote_response'],1200)).'</pre></div>';
-  $body.='<div class="record-signatures"><div>Pengirim<br><br><br><strong>'.e($r['created_by_name']?:'________________').'</strong></div><div>Penerima / Manajer Toko<br><br><br><strong>________________</strong></div></div>';
-  echo dapur_record_modal('sale-'.(int)$r['id'],'Faktur Transfer '.$r['sale_no'],$body,true);
+  $isStore=!empty($r['store_id']); $gross=0.0;$discount=0.0; foreach($items as $it){$gross+=(float)$it['qty']*(float)($it['original_price']?:$it['transfer_price']);$discount+=(float)($it['discount_amount']??0);}
+  $body=dapur_report_header($isStore?'FAKTUR / SURAT PENGIRIMAN STOK':'FAKTUR PENJUALAN',(string)$r['sale_no'],$isStore?'Distribusi stok dari dapur ke toko':'Penjualan dari Dapur Adena');
+  $body.='<div class="record-meta"><div><span>Tanggal</span><strong>'.e($r['sale_date']).'</strong></div><div><span>Customer / Tujuan</span><strong>'.e($r['destination_name']?:'-').'</strong></div><div><span>Jenis</span><strong>'.($isStore?'Toko terintegrasi':'Customer lainnya').'</strong></div><div><span>Status</span><strong>'.e(dapur_status_label((string)$r['status'])).'</strong></div><div><span>Petugas</span><strong>'.e($r['created_by_name']?:'-').'</strong></div><div><span>Diposting</span><strong>'.e($r['posted_at']?:'-').'</strong></div></div>';
+  $body.='<table class="record-table"><thead><tr><th>No</th><th>Bahan / Produk</th><th class="num">Qty</th><th class="num">Harga awal</th><th>Diskon</th><th class="num">Subtotal netto</th></tr></thead><tbody>';
+  foreach($items as $i=>$it){$dt=(string)($it['discount_type']??'none');$dv=(float)($it['discount_value']??0);$dl=$dt==='percent'?dec($dv).'%':($dt==='nominal'?rupiah($dv):'-');$orig=(float)($it['original_price']?:$it['transfer_price']);$body.='<tr><td>'.($i+1).'</td><td>'.e($it['item_display']).'</td><td class="num">'.dec($it['qty']).' '.e($it['unit']).'</td><td class="num">'.rupiah($orig).'</td><td>'.e($dl).'</td><td class="num">'.rupiah($it['subtotal']).'</td></tr>';}
+  if(!$items)$body.='<tr><td colspan="6" class="muted">Tidak ada rincian item.</td></tr>';
+  $body.='</tbody><tfoot><tr><th colspan="5">TOTAL BRUTO</th><th class="num">'.rupiah($gross).'</th></tr><tr><th colspan="5">TOTAL DISKON</th><th class="num">'.rupiah($discount).'</th></tr><tr class="record-grand-total"><th colspan="5">TOTAL PENJUALAN</th><th class="num">'.rupiah($r['total_amount']).'</th></tr></tfoot></table><div class="record-note"><span>Catatan</span><p>'.nl2br(e($r['notes']?:'-')).'</p></div>';
+  if($r['status']==='failed_sync' && trim((string)$r['remote_response'])!=='')$body.='<div class="record-sync-note no-print"><strong>Catatan sinkronisasi:</strong><pre class="log-pre">'.e(short_text($r['remote_response'],1200)).'</pre></div>';
+  $body.='<div class="record-signatures"><div>Pengirim<br><br><br><strong>'.e($r['created_by_name']?:'________________').'</strong></div><div>Penerima'.($isStore?' / Manajer Toko':'').'<br><br><br><strong>________________</strong></div></div>'; echo dapur_record_modal('sale-'.(int)$r['id'],'Faktur '.$r['sale_no'],$body,true);
  }
-
 }
+
 elseif($page==='activity_types'){
  if($_SERVER['REQUEST_METHOD']==='POST'){
   $act=$_POST['act']??'';

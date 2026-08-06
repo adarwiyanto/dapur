@@ -37,3 +37,18 @@ INSERT IGNORE INTO role_permissions(role_id,permission_id) SELECT 5,id FROM perm
 INSERT IGNORE INTO role_permissions(role_id,permission_id) SELECT 6,id FROM permissions WHERE permission_key IN ('dashboard','stock');
 INSERT IGNORE INTO units(unit_name) VALUES ('pcs'),('pack'),('gram'),('kg'),('liter'),('ml');
 INSERT IGNORE INTO activity_types(activity_name,category,unit_name,point_weight) VALUES ('Membersihkan kepiting','Produksi','kegiatan',5),('Membuat adonan','Produksi','batch',8),('Mengisi ketam','Produksi','batch',10),('Packing','Produksi','pack',4),('Membersihkan dapur','Kebersihan','kegiatan',3),('Belanja bahan','Operasional','kegiatan',6),('Stock opname','Stok','kegiatan',5);
+
+-- Patch 20260806a: customer non-toko dan rincian diskon penjualan.
+CREATE TABLE IF NOT EXISTS customers(
+ id INT AUTO_INCREMENT PRIMARY KEY,
+ customer_code VARCHAR(60) NULL,
+ customer_name VARCHAR(160) NOT NULL,
+ phone VARCHAR(60) NULL,
+ address TEXT NULL,
+ notes TEXT NULL,
+ is_active TINYINT(1) NOT NULL DEFAULT 1,
+ created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+ updated_at DATETIME NULL,
+ UNIQUE KEY uq_customer_code(customer_code),
+ KEY idx_customer_active_name(is_active,customer_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
