@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Asia/Jakarta');
 $done=is_file(__DIR__.'/../config.php');
 $msg='';
 if($_SERVER['REQUEST_METHOD']==='POST'){
@@ -6,6 +7,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
   $admin=$_POST['admin_user']??'owner'; $adminpass=$_POST['admin_pass']??''; $name=$_POST['admin_name']??'Owner';
   try{
     $pdo=new PDO("mysql:host=$host;port=$port;charset=utf8mb4",$user,$pass,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+    $pdo->exec("SET time_zone = '+07:00'");
     $pdo->exec("CREATE DATABASE IF NOT EXISTS `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     $pdo->exec("USE `$db`");
     $sql=file_get_contents(__DIR__.'/../db/schema.sql');
@@ -13,7 +15,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     $hash=password_hash($adminpass, PASSWORD_DEFAULT);
     $st=$pdo->prepare("INSERT INTO users(username,name,password_hash,role_id,is_active) VALUES(?,?,?,?,1) ON DUPLICATE KEY UPDATE name=VALUES(name), password_hash=VALUES(password_hash), role_id=1, is_active=1");
     $st->execute([$admin,$name,$hash,1]);
-    $cfg="<?php\nreturn ".var_export(['app'=>['name'=>'Dapur Adena','base_url'=>$base], 'db'=>['host'=>$host,'port'=>$port,'name'=>$db,'user'=>$user,'pass'=>$pass]], true).";\n";
+    $cfg="<?php\nreturn ".var_export(['app'=>['name'=>'Dapur Adena','base_url'=>$base,'timezone'=>'Asia/Jakarta'], 'db'=>['host'=>$host,'port'=>$port,'name'=>$db,'user'=>$user,'pass'=>$pass]], true).";\n";
     file_put_contents(__DIR__.'/../config.php',$cfg);
     $done=true; $msg='Instalasi selesai. Hapus folder install setelah login pertama.';
   }catch(Throwable $e){ $msg='Error: '.$e->getMessage(); }
