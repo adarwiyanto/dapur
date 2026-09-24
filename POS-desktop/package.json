@@ -1,0 +1,39 @@
+{
+  "name": "dapur-adena-pos-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "POS Desktop Dapur Adena - offline first",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "^36.9.2",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "id.co.adena.dapur.pos",
+    "productName": "Dapur Adena POS",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "Dapur-Adena-POS-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
